@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const { z } = require("zod");
-const { port, frontendUrl } = require("./config");
+const { port } = require("./config");
 const { initializeDatabase, query, withTransaction } = require("./db");
 const { seedDefaultUsers } = require("./seedData");
 const {
@@ -19,7 +19,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: frontendUrl,
+    origin: true,
   })
 );
 app.use(express.json());
@@ -44,18 +44,13 @@ function parseJsonArrayField(value) {
 }
 
 async function getDocumentList({ userId, role, onlyAssigned, req }) {
-  const params = [];
+  const params = [userId];
   let whereClause = "";
 
   if (onlyAssigned) {
-    params.push(userId);
-    whereClause = `WHERE d.status = 'published' AND EXISTS (
-      SELECT 1 FROM document_assignments da
-      WHERE da.document_id = d.id AND da.user_id = $${params.length}
-    )`;
+    whereClause = "WHERE d.status = 'published' AND current_assignment.user_id IS NOT NULL";
   } else if (role !== "responsible") {
-    params.push(userId);
-    whereClause = `WHERE d.author_id = $${params.length}`;
+    whereClause = `WHERE d.author_id = $1`;
   }
 
   const sql = `
@@ -78,6 +73,8 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
       FROM document_assignments
       GROUP BY document_id
     ) assign_counts ON assign_counts.document_id = d.id
+    LEFT JOIN document_assignments current_assignment
+      ON current_assignment.document_id = d.id AND current_assignment.user_id = $1
     LEFT JOIN (
       SELECT document_id, version_no, COUNT(*) AS acknowledged_count
       FROM document_acknowledgements
@@ -86,7 +83,7 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
     LEFT JOIN document_versions active_version
       ON active_version.document_id = d.id AND active_version.version_no = d.active_version_no
     LEFT JOIN document_acknowledgements ack_self
-      ON ack_self.document_id = d.id AND ack_self.version_no = d.active_version_no AND ack_self.user_id = $${params.push(userId)}
+      ON ack_self.document_id = d.id AND ack_self.version_no = d.active_version_no AND ack_self.user_id = $1
     ${whereClause}
     ORDER BY d.created_at DESC
   `;

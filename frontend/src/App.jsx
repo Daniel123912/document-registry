@@ -69,7 +69,9 @@ function App() {
     try {
       const requests = [
         fetchDocuments(currentToken, currentUser.role === "responsible" ? "all" : "mine"),
-        fetchAssignedDocuments(currentToken),
+        currentUser.role === "responsible"
+          ? Promise.resolve([])
+          : fetchAssignedDocuments(currentToken),
       ];
 
       if (currentUser.role === "responsible") {

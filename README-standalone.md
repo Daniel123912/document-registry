@@ -44,4 +44,4 @@ npm run dev
 ## Порты по умолчанию
 
 - Frontend: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:4010`
+- Backend API: `http://127.0.0.1:4011`
