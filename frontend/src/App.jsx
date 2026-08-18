@@ -799,6 +799,8 @@ function App() {
               onCreateVersion={handleCreateVersion}
               onAcknowledge={handleAcknowledge}
               onPublish={handlePublish}
+              notice={notice}
+              error={error}
             />
           </div>
         </div>

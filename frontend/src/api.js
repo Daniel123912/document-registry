@@ -1,7 +1,13 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_URL}${path}`, options);
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, options);
+  } catch (error) {
+    throw new Error("Нет связи с сервером. Запустите backend: cd backend && npm run dev");
+  }
+
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -94,8 +100,8 @@ export async function acknowledgeDocument(token, documentId, versionNo) {
 }
 
 export async function updateDocument(token, documentId, payload) {
-  return request(`/documents/${documentId}`, {
-    method: "PATCH",
+  return request(`/documents/${documentId}/update`, {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -114,8 +120,8 @@ export async function archiveDocument(token, documentId) {
 }
 
 export async function deleteDocument(token, documentId) {
-  return request(`/documents/${documentId}`, {
-    method: "DELETE",
+  return request(`/documents/${documentId}/delete`, {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
     },

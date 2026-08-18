@@ -18,6 +18,7 @@ module.exports = {
     .filter(Boolean),
   jwtSecret: process.env.JWT_SECRET || "change-me",
   useInMemoryDb: process.env.USE_IN_MEMORY_DB === "true",
+  usePostgres: process.env.USE_POSTGRES === "true",
   databaseUrl:
     process.env.DATABASE_URL ||
     "postgres://postgres:postgres@localhost:5432/bakor_docflow",

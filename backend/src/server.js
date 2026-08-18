@@ -21,6 +21,7 @@ const app = express();
 app.use(
   cors({
     origin: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   })
 );
 app.use(express.json());
@@ -452,58 +453,66 @@ app.post(
   })
 );
 
-app.patch(
-  "/documents/:id",
-  requireAuth,
-  requireResponsible,
-  asyncHandler(async (req, res) => {
-    const documentId = Number(req.params.id);
-    const schema = z.object({
-      title: z.string().min(1),
-      type: z.enum(["order", "regulation", "instruction", "new_goods", "other"]),
-      number: z.string().optional().default(""),
-      documentDate: z.string().min(1),
-      description: z.string().optional().default(""),
-      assignedUsers: z.array(z.number()).optional().default([]),
-    });
-    const parsed = schema.parse(req.body);
+async function updateDocumentRequisites(req, res) {
+  const documentId = Number(req.params.id);
+  const schema = z.object({
+    title: z.string().min(1),
+    type: z.enum(["order", "regulation", "instruction", "new_goods", "other"]),
+    number: z.string().optional().default(""),
+    documentDate: z.string().min(1),
+    description: z.string().optional().default(""),
+    assignedUsers: z.array(z.coerce.number()).optional().default([]),
+  });
+  const parsed = schema.parse(req.body);
+  const documentDate = String(parsed.documentDate).slice(0, 10);
 
-    await withTransaction(async (client) => {
-      const existing = await client.query("SELECT id FROM documents WHERE id = $1", [documentId]);
-      if (!existing.rows.length) {
-        throw new Error("Документ не найден.");
-      }
+  await withTransaction(async (client) => {
+    const existing = await client.query("SELECT id FROM documents WHERE id = $1", [documentId]);
+    if (!existing.rows.length) {
+      throw new Error("Документ не найден.");
+    }
 
+    await client.query(
+      `
+        UPDATE documents
+        SET title = $2,
+            type = $3,
+            number = $4,
+            document_date = $5,
+            description = $6,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [documentId, parsed.title, parsed.type, parsed.number, documentDate, parsed.description]
+    );
+
+    await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
+    for (const userId of parsed.assignedUsers) {
       await client.query(
         `
-          UPDATE documents
-          SET title = $2,
-              type = $3,
-              number = $4,
-              document_date = $5,
-              description = $6,
-              updated_at = NOW()
-          WHERE id = $1
+          INSERT INTO document_assignments (document_id, user_id)
+          VALUES ($1, $2)
+          ON CONFLICT (document_id, user_id) DO NOTHING
         `,
-        [documentId, parsed.title, parsed.type, parsed.number, parsed.documentDate, parsed.description]
+        [documentId, userId]
       );
+    }
+  });
 
-      await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
-      for (const userId of parsed.assignedUsers) {
-        await client.query(
-          `
-            INSERT INTO document_assignments (document_id, user_id)
-            VALUES ($1, $2)
-            ON CONFLICT (document_id, user_id) DO NOTHING
-          `,
-          [documentId, userId]
-        );
-      }
-    });
+  res.json({ message: "Реквизиты сохранены." });
+}
 
-    res.json({ message: "Реквизиты сохранены." });
-  })
-);
+async function removeDocument(req, res) {
+  const documentId = Number(req.params.id);
+  const result = await query("DELETE FROM documents WHERE id = $1 RETURNING id", [documentId]);
+  if (!result.rows.length) {
+    throw new Error("Документ не найден.");
+  }
+  res.json({ message: "Документ удален." });
+}
+
+app.patch("/documents/:id", requireAuth, requireResponsible, asyncHandler(updateDocumentRequisites));
+app.post("/documents/:id/update", requireAuth, requireResponsible, asyncHandler(updateDocumentRequisites));
 
 app.post(
   "/documents/:id/archive",
@@ -527,19 +536,8 @@ app.post(
   })
 );
 
-app.delete(
-  "/documents/:id",
-  requireAuth,
-  requireResponsible,
-  asyncHandler(async (req, res) => {
-    const documentId = Number(req.params.id);
-    const result = await query("DELETE FROM documents WHERE id = $1 RETURNING id", [documentId]);
-    if (!result.rows.length) {
-      throw new Error("Документ не найден.");
-    }
-    res.json({ message: "Документ удален." });
-  })
-);
+app.delete("/documents/:id", requireAuth, requireResponsible, asyncHandler(removeDocument));
+app.post("/documents/:id/delete", requireAuth, requireResponsible, asyncHandler(removeDocument));
 
 app.post(
   "/documents/:id/acknowledgements",
@@ -638,6 +636,7 @@ initializeDatabase()
   .then(() => {
     app.listen(port, () => {
       console.log(`Bakor Docflow API listening on port ${port}`);
+      console.log("Database: persistent file store in %ProgramData%\\bakor-docflow");
     });
   })
   .catch((error) => {

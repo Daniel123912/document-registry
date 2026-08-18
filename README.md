@@ -6,7 +6,8 @@
 
 - `frontend/`: React + Vite
 - `backend/`: Node.js + Express
-- PostgreSQL через `docker-compose.yml`
+- PostgreSQL через `docker-compose.yml` (необязательно)
+- Локально документы сохраняются в `backend/data/` и не пропадают после перезапуска
 
 ## Быстрый старт
 

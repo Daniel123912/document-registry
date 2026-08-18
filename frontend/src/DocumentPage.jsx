@@ -53,6 +53,8 @@ export default function DocumentPage({
   onCreateVersion,
   onAcknowledge,
   onPublish,
+  notice,
+  error,
 }) {
   const [tab, setTab] = useState("preview");
   const [previewVersionNo, setPreviewVersionNo] = useState(document.activeVersionNo || 0);
@@ -110,7 +112,14 @@ export default function DocumentPage({
 
   function handleSave(event) {
     event.preventDefault();
-    onSaveRequisites(document.id, editForm);
+    onSaveRequisites(document.id, {
+      title: editForm.title,
+      type: editForm.type,
+      number: editForm.number || "",
+      documentDate: toIsoDateValue(editForm.documentDate),
+      description: editForm.description || "",
+      assignedUsers: (editForm.assignedUsers || []).map(Number),
+    });
   }
 
   function handleNewVersion(event) {
@@ -133,6 +142,9 @@ export default function DocumentPage({
           Закрыть
         </button>
       </header>
+
+      {notice ? <div className="alert success">{notice}</div> : null}
+      {error ? <div className="alert error">{error}</div> : null}
 
       <div className="doc-tabs">
         <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
@@ -390,7 +402,21 @@ export default function DocumentPage({
             <button className="btn danger-text" type="button" onClick={() => onDelete(document.id)}>
               Удалить документ
             </button>
-            <button className="btn cancel" type="button" onClick={onClose}>
+            <button
+              className="btn cancel"
+              type="button"
+              onClick={() => {
+                setEditForm({
+                  title: document.title || "",
+                  type: document.type,
+                  number: document.number || "",
+                  documentDate: toIsoDateValue(document.documentDate),
+                  description: document.description || "",
+                  assignedUsers: (document.assignedUsers || []).map((user) => user.id),
+                });
+                setTab("preview");
+              }}
+            >
               Отмена
             </button>
             <button className="btn primary" type="submit" disabled={loading}>

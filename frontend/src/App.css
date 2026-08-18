@@ -410,6 +410,7 @@ textarea::placeholder {
   padding: 14px 18px;
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
