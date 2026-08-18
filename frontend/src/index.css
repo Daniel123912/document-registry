@@ -1,23 +1,22 @@
 :root {
-  --bg: #f4f1ea;
-  --panel: #fffdf8;
-  --ink: #152238;
-  --muted: #5f6775;
-  --line: #e8e0d1;
-  --brand: #0d5c63;
-  --brand-2: #ff7a2f;
+  --page: #eef1f6;
+  --sidebar: #e7eef5;
+  --panel: #ffffff;
+  --ink: #2b3a4a;
+  --muted: #8a96a5;
+  --line: #d7dee6;
+  --brand: #6b92b8;
+  --brand-strong: #5d84ab;
+  --brand-soft: #e8f0f8;
   --ok-bg: #dcf7e8;
   --ok-ink: #0b6c3c;
   --warn-bg: #fff1d6;
   --warn-ink: #a45100;
   --danger-bg: #fde2e2;
   --danger-ink: #8f2121;
-  font-family: "Manrope", system-ui, sans-serif;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 8% 8%, #ffe4c8 0%, transparent 28%),
-    radial-gradient(circle at 88% 2%, #d9eef0 0%, transparent 30%),
-    var(--bg);
+  background: var(--page);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -43,4 +42,11 @@ h2,
 h3,
 p {
   margin-top: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
