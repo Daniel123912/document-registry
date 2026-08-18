@@ -93,4 +93,33 @@ export async function acknowledgeDocument(token, documentId, versionNo) {
   });
 }
 
+export async function updateDocument(token, documentId, payload) {
+  return request(`/documents/${documentId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function archiveDocument(token, documentId) {
+  return request(`/documents/${documentId}/archive`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export async function deleteDocument(token, documentId) {
+  return request(`/documents/${documentId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
 export { API_URL };

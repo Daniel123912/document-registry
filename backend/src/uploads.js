@@ -1,11 +1,13 @@
 const path = require("path");
 const multer = require("multer");
 const { uploadsDir } = require("./config");
+const { decodeOriginalFilename } = require("./filenames");
 
 const storage = multer.diskStorage({
   destination: uploadsDir,
   filename: (req, file, callback) => {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const originalName = decodeOriginalFilename(file.originalname);
+    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
     callback(null, `${Date.now()}-${safeName}`);
   },
 });
@@ -14,17 +16,22 @@ const allowedTypes = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
 ]);
 
 const upload = multer({
   storage,
+  defParamCharset: "utf8",
   fileFilter: (req, file, callback) => {
     if (allowedTypes.has(file.mimetype)) {
       callback(null, true);
       return;
     }
 
-    callback(new Error("Допустимы только PDF, DOC и DOCX."));
+    callback(new Error("Допустимы только PDF, DOC, DOCX и изображения."));
   },
 });
 

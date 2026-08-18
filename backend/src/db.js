@@ -40,6 +40,15 @@ async function initializeDatabase() {
   for (const statement of schemaStatements) {
     await query(statement);
   }
+
+  try {
+    await query("ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_status_check");
+    await query(
+      `ALTER TABLE documents ADD CONSTRAINT documents_status_check CHECK (status IN ('draft', 'published', 'archived'))`
+    );
+  } catch (error) {
+    // Constraint already matches or the in-memory engine does not support ALTER.
+  }
 }
 
 module.exports = {

@@ -2,15 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import {
   acknowledgeDocument,
+  archiveDocument,
   createDocument,
   createVersion,
+  deleteDocument,
   fetchAssignedDocuments,
   fetchDocuments,
   fetchReport,
   fetchUsers,
   login,
   publishDocument,
+  updateDocument,
 } from "./api";
+import { withReadableFilenames } from "./filenames";
+import DocumentPage from "./DocumentPage";
 
 const TYPE_OPTIONS = [
   { value: "order", label: "Приказы / Решения" },
@@ -80,7 +85,6 @@ function App() {
   const [activeType, setActiveType] = useState("other");
   const [activeOpen, setActiveOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailTab, setDetailTab] = useState("main");
   const [documents, setDocuments] = useState([]);
   const [assignedDocuments, setAssignedDocuments] = useState([]);
   const [reportRows, setReportRows] = useState([]);
@@ -124,6 +128,9 @@ function App() {
 
     let rows = source.filter((document) => {
       if (section === "archive") {
+        return document.status === "archived";
+      }
+      if (document.status === "archived") {
         return false;
       }
       if (section === "inbox") {
@@ -174,8 +181,8 @@ function App() {
       const [documentsData, assignedData, reportData = [], usersData = []] =
         await Promise.all(requests);
 
-      setDocuments(documentsData);
-      setAssignedDocuments(assignedData);
+      setDocuments((documentsData || []).map(withReadableFilenames));
+      setAssignedDocuments((assignedData || []).map(withReadableFilenames));
       setReportRows(reportData);
       setUsers(usersData);
     } catch (requestError) {
@@ -292,17 +299,17 @@ function App() {
     }
   }
 
-  async function handleCreateVersion(event, documentId) {
+  async function handleCreateVersion(event, documentId, currentForm) {
     event.preventDefault();
-    const currentForm = versionForms[documentId] || emptyVersionForm;
+    const form = currentForm || versionForms[documentId] || emptyVersionForm;
     setLoading(true);
     setError("");
 
     try {
       const formData = new FormData();
-      formData.append("changeReason", currentForm.changeReason);
-      if (currentForm.versionFile) {
-        formData.append("versionFile", currentForm.versionFile);
+      formData.append("changeReason", form.changeReason);
+      if (form.versionFile) {
+        formData.append("versionFile", form.versionFile);
       }
       const result = await createVersion(token, documentId, formData);
       setVersionForms((current) => ({
@@ -325,6 +332,54 @@ function App() {
     try {
       const result = await acknowledgeDocument(token, documentId, versionNo);
       setNotice(result.message);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveRequisites(documentId, payload) {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await updateDocument(token, documentId, payload);
+      setNotice(result.message);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleArchive(documentId) {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await archiveDocument(token, documentId);
+      setNotice(result.message);
+      setSelectedDocumentId(null);
+      setSection("archive");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDelete(documentId) {
+    if (!window.confirm("Удалить документ безвозвратно?")) {
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await deleteDocument(token, documentId);
+      setNotice(result.message);
+      setSelectedDocumentId(null);
       await loadData();
     } catch (requestError) {
       setError(requestError.message);
@@ -542,10 +597,7 @@ function App() {
                   <tr
                     key={document.id}
                     className={selectedDocumentId === document.id ? "active" : ""}
-                    onClick={() => {
-                      setSelectedDocumentId(document.id);
-                      setDetailTab("main");
-                    }}
+                    onClick={() => setSelectedDocumentId(document.id)}
                   >
                     <td>
                       <div className="doc-name">{document.title}</div>
@@ -705,7 +757,7 @@ function App() {
                   <input
                     className="file-input"
                     type="file"
-                    accept=".pdf,.doc,.docx"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
                     onChange={(event) =>
                       setCreateForm((current) => ({
                         ...current,
@@ -731,201 +783,24 @@ function App() {
 
       {selectedDocument ? (
         <div className="overlay" onClick={() => setSelectedDocumentId(null)}>
-          <article
-            className="modal wide"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-body">
-              <h2 className="modal-title">{selectedDocument.title}</h2>
-              <div className="doc-sub" style={{ marginBottom: 14 }}>
-                {typeLabel(selectedDocument.type)} · v{selectedDocument.activeVersionNo || 0} ·{" "}
-                {selectedDocument.status === "published" ? "Опубликован" : "Черновик"}
-              </div>
-
-              <div className="tabs">
-                {[
-                  ["main", "Основное"],
-                  ["file", "Файл"],
-                  ["versions", "Версии"],
-                  ["ack", "Ознакомление"],
-                ].map(([tabKey, label]) => (
-                  <button
-                    key={tabKey}
-                    className={detailTab === tabKey ? "active" : ""}
-                    onClick={() => setDetailTab(tabKey)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {detailTab === "main" ? (
-                <>
-                  <div className="kv">
-                    <div className="k">Дата документа</div>
-                    <div>{formatDate(selectedDocument.documentDate)}</div>
-                  </div>
-                  <div className="kv">
-                    <div className="k">Автор</div>
-                    <div>{selectedDocument.authorName}</div>
-                  </div>
-                  <div className="kv">
-                    <div className="k">Срок ознакомления</div>
-                    <div>{formatDate(selectedDocument.dueDate)}</div>
-                  </div>
-                  <div className="kv">
-                    <div className="k">Описание</div>
-                    <div>{selectedDocument.description || "Описание не заполнено"}</div>
-                  </div>
-                </>
-              ) : null}
-
-              {detailTab === "file" ? (
-                <>
-                  <div className="kv">
-                    <div className="k">Текущий файл</div>
-                    <div>{selectedDocument.currentFilename || "Не найден"}</div>
-                  </div>
-                  <div className="kv">
-                    <div className="k">Ссылка</div>
-                    <div>
-                      {selectedDocument.currentFileUrl ? (
-                        <a href={selectedDocument.currentFileUrl} target="_blank" rel="noreferrer">
-                          Открыть файл
-                        </a>
-                      ) : (
-                        "Нет файла"
-                      )}
-                    </div>
-                  </div>
-                  <div className="doc-actions">
-                    {isResponsible && selectedDocument.status !== "published" ? (
-                      <button
-                        className="btn primary"
-                        onClick={() => handlePublish(selectedDocument.id)}
-                      >
-                        Опубликовать
-                      </button>
-                    ) : null}
-                    {!isResponsible && !selectedDocument.isAcknowledged ? (
-                      <button
-                        className="btn primary"
-                        onClick={() =>
-                          handleAcknowledge(selectedDocument.id, selectedDocument.activeVersionNo)
-                        }
-                      >
-                        Ознакомлен
-                      </button>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-
-              {detailTab === "versions" ? (
-                <>
-                  {(selectedDocument.versions || []).map((version) => (
-                    <div className="item" key={version.versionNo}>
-                      <strong>
-                        v{version.versionNo}
-                        {version.versionNo === selectedDocument.activeVersionNo ? " (текущая)" : ""}
-                      </strong>
-                      <div className="muted">{version.changeReason}</div>
-                      <div className="muted">Автор: {version.createdByName}</div>
-                      <a href={version.fileUrl} target="_blank" rel="noreferrer">
-                        {version.originalFilename}
-                      </a>
-                    </div>
-                  ))}
-
-                  {isResponsible && selectedDocument.status === "published" ? (
-                    <form
-                      className="inline-version-form"
-                      onSubmit={(event) => handleCreateVersion(event, selectedDocument.id)}
-                    >
-                      <input
-                        className="field-input"
-                        type="text"
-                        placeholder="Причина изменения"
-                        value={versionForms[selectedDocument.id]?.changeReason || ""}
-                        onChange={(event) =>
-                          setVersionForms((current) => ({
-                            ...current,
-                            [selectedDocument.id]: {
-                              ...(current[selectedDocument.id] || emptyVersionForm),
-                              changeReason: event.target.value,
-                            },
-                          }))
-                        }
-                        required
-                      />
-                      <input
-                        className="file-input"
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={(event) =>
-                          setVersionForms((current) => ({
-                            ...current,
-                            [selectedDocument.id]: {
-                              ...(current[selectedDocument.id] || emptyVersionForm),
-                              versionFile: event.target.files?.[0] || null,
-                            },
-                          }))
-                        }
-                        required
-                      />
-                      <button className="btn primary" type="submit">
-                        Новая версия
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              ) : null}
-
-              {detailTab === "ack" ? (
-                <>
-                  <div className="item">
-                    <strong>Сотрудники</strong>
-                    <div className="muted">
-                      Назначено: {selectedDocument.assignedCount || 0} | Ознакомились:{" "}
-                      {selectedDocument.acknowledgedCount || 0} | Ожидают:{" "}
-                      {selectedDocument.pendingCount || 0}
-                    </div>
-                  </div>
-                  {(selectedDocument.assignedUsers || []).map((assignedUser) => (
-                    <div className="item" key={assignedUser.id}>
-                      <strong>{assignedUser.fullName}</strong>
-                      <div className="muted">{assignedUser.email}</div>
-                    </div>
-                  ))}
-                </>
-              ) : null}
-            </div>
-            <div className="modal-foot">
-              <button className="btn cancel" type="button" onClick={() => setSelectedDocumentId(null)}>
-                Закрыть
-              </button>
-              {isResponsible && selectedDocument.status !== "published" ? (
-                <button
-                  className="btn primary"
-                  type="button"
-                  onClick={() => handlePublish(selectedDocument.id)}
-                >
-                  Опубликовать
-                </button>
-              ) : null}
-              {!isResponsible && !selectedDocument.isAcknowledged ? (
-                <button
-                  className="btn primary"
-                  type="button"
-                  onClick={() =>
-                    handleAcknowledge(selectedDocument.id, selectedDocument.activeVersionNo)
-                  }
-                >
-                  Ознакомлен
-                </button>
-              ) : null}
-            </div>
-          </article>
+          <div className="doc-modal" onClick={(event) => event.stopPropagation()}>
+            <DocumentPage
+              document={selectedDocument}
+              users={users}
+              isResponsible={isResponsible}
+              loading={loading}
+              typeLabel={typeLabel}
+              formatDate={formatDate}
+              typeOptions={TYPE_OPTIONS}
+              onClose={() => setSelectedDocumentId(null)}
+              onSaveRequisites={handleSaveRequisites}
+              onArchive={handleArchive}
+              onDelete={handleDelete}
+              onCreateVersion={handleCreateVersion}
+              onAcknowledge={handleAcknowledge}
+              onPublish={handlePublish}
+            />
+          </div>
         </div>
       ) : null}
     </div>

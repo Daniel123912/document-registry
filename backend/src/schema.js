@@ -19,7 +19,7 @@ const schemaStatements = [
       number TEXT NOT NULL DEFAULT '',
       document_date DATE NOT NULL,
       due_date DATE NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('draft', 'published')),
+      status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'archived')),
       author_id BIGINT NOT NULL REFERENCES users(id),
       draft_file_path TEXT,
       draft_original_filename TEXT,

@@ -13,6 +13,7 @@ const {
   requireResponsible,
 } = require("./auth");
 const { upload, fileUrl } = require("./uploads");
+const { decodeOriginalFilename } = require("./filenames");
 const { normalizeDocument } = require("./serializers");
 
 const app = express();
@@ -62,6 +63,7 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
       GREATEST(COALESCE(assign_counts.assigned_count, 0) - COALESCE(ack_counts.acknowledged_count, 0), 0) AS pending_count,
       COALESCE(active_version.original_filename, d.draft_original_filename) AS current_filename,
       COALESCE(active_version.file_path, d.draft_file_path) AS current_file_path,
+      COALESCE(active_version.mime_type, d.draft_mime_type) AS current_mime_type,
       CASE
         WHEN ack_self.user_id IS NULL THEN FALSE
         ELSE TRUE
@@ -95,7 +97,7 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
     const [versionsResult, usersResult] = await Promise.all([
       query(
         `
-          SELECT dv.version_no, dv.change_reason, dv.created_at, dv.original_filename, dv.file_path, u.full_name AS created_by_name
+          SELECT dv.version_no, dv.change_reason, dv.created_at, dv.original_filename, dv.file_path, dv.mime_type, u.full_name AS created_by_name
           FROM document_versions dv
           JOIN users u ON u.id = dv.created_by
           WHERE dv.document_id = $1
@@ -105,13 +107,20 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
       ),
       query(
         `
-          SELECT u.id, u.full_name, u.email
+          SELECT u.id, u.full_name, u.email,
+            EXISTS (
+              SELECT 1
+              FROM document_acknowledgements ack
+              WHERE ack.document_id = da.document_id
+                AND ack.user_id = u.id
+                AND ack.version_no = $2
+            ) AS is_acknowledged
           FROM document_assignments da
           JOIN users u ON u.id = da.user_id
           WHERE da.document_id = $1
           ORDER BY u.full_name ASC
         `,
-        [row.id]
+        [row.id, Number(row.active_version_no || 0)]
       ),
     ]);
 
@@ -125,12 +134,14 @@ async function getDocumentList({ userId, role, onlyAssigned, req }) {
           createdAt: version.created_at,
           originalFilename: version.original_filename,
           createdByName: version.created_by_name,
+          mimeType: version.mime_type,
           fileUrl: fileUrl(req, version.file_path),
         })),
         assigned_users: usersResult.rows.map((user) => ({
           id: Number(user.id),
           fullName: user.full_name,
           email: user.email,
+          isAcknowledged: Boolean(user.is_acknowledged),
         })),
       })
     );
@@ -305,7 +316,7 @@ app.post(
           parsed.dueDate,
           Number(req.user.sub),
           req.file.path,
-          req.file.originalname,
+          decodeOriginalFilename(req.file.originalname),
           req.file.mimetype,
         ]
       );
@@ -420,7 +431,7 @@ app.post(
           documentId,
           currentVersionNo,
           req.file.path,
-          req.file.originalname,
+          decodeOriginalFilename(req.file.originalname),
           req.file.mimetype,
           parsed.changeReason,
           Number(req.user.sub),
@@ -438,6 +449,95 @@ app.post(
     });
 
     res.json({ message: "Новая версия создана и активирована." });
+  })
+);
+
+app.patch(
+  "/documents/:id",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(async (req, res) => {
+    const documentId = Number(req.params.id);
+    const schema = z.object({
+      title: z.string().min(1),
+      type: z.enum(["order", "regulation", "instruction", "new_goods", "other"]),
+      number: z.string().optional().default(""),
+      documentDate: z.string().min(1),
+      description: z.string().optional().default(""),
+      assignedUsers: z.array(z.number()).optional().default([]),
+    });
+    const parsed = schema.parse(req.body);
+
+    await withTransaction(async (client) => {
+      const existing = await client.query("SELECT id FROM documents WHERE id = $1", [documentId]);
+      if (!existing.rows.length) {
+        throw new Error("Документ не найден.");
+      }
+
+      await client.query(
+        `
+          UPDATE documents
+          SET title = $2,
+              type = $3,
+              number = $4,
+              document_date = $5,
+              description = $6,
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [documentId, parsed.title, parsed.type, parsed.number, parsed.documentDate, parsed.description]
+      );
+
+      await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
+      for (const userId of parsed.assignedUsers) {
+        await client.query(
+          `
+            INSERT INTO document_assignments (document_id, user_id)
+            VALUES ($1, $2)
+            ON CONFLICT (document_id, user_id) DO NOTHING
+          `,
+          [documentId, userId]
+        );
+      }
+    });
+
+    res.json({ message: "Реквизиты сохранены." });
+  })
+);
+
+app.post(
+  "/documents/:id/archive",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(async (req, res) => {
+    const documentId = Number(req.params.id);
+    const result = await query(
+      `
+        UPDATE documents
+        SET status = 'archived', updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+      `,
+      [documentId]
+    );
+    if (!result.rows.length) {
+      throw new Error("Документ не найден.");
+    }
+    res.json({ message: "Документ перемещен в архив." });
+  })
+);
+
+app.delete(
+  "/documents/:id",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(async (req, res) => {
+    const documentId = Number(req.params.id);
+    const result = await query("DELETE FROM documents WHERE id = $1 RETURNING id", [documentId]);
+    if (!result.rows.length) {
+      throw new Error("Документ не найден.");
+    }
+    res.json({ message: "Документ удален." });
   })
 );
 
@@ -521,7 +621,7 @@ app.use((error, req, res, next) => {
     });
   }
 
-  if (error.message === "Допустимы только PDF, DOC и DOCX.") {
+  if (error.message === "Допустимы только PDF, DOC, DOCX и изображения.") {
     return res.status(400).json({ message: error.message });
   }
 
