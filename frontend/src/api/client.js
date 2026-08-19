@@ -150,6 +150,7 @@ export async function fetchDocumentFile(token, documentId, versionNo) {
 
   const blob = await response.blob();
   return {
+    blob,
     objectUrl: URL.createObjectURL(blob),
     mimeType: response.headers.get("content-type") || blob.type,
   };

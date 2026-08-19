@@ -8,7 +8,7 @@ function errorHandler(error, req, res, next) {
     });
   }
 
-  if (error.message === "Допустимы только PDF, DOC, DOCX и изображения.") {
+  if (error.message === "Допустимы только PDF, Word, Excel и изображения.") {
     return res.status(400).json({ message: error.message });
   }
 

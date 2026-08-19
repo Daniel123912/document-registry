@@ -6,6 +6,8 @@ const ALLOWED_EXTENSIONS = new Set([
   ".pdf",
   ".doc",
   ".docx",
+  ".xls",
+  ".xlsx",
   ".png",
   ".jpg",
   ".jpeg",

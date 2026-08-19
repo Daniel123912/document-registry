@@ -15,6 +15,8 @@ const allowedTypes = new Set([
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "image/png",
   "image/jpeg",
   "image/gif",
@@ -30,7 +32,7 @@ const upload = multer({
       return;
     }
 
-    callback(new Error("Допустимы только PDF, DOC, DOCX и изображения."));
+    callback(new Error("Допустимы только PDF, Word, Excel и изображения."));
   },
 });
 

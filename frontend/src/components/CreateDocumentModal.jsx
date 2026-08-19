@@ -135,7 +135,7 @@ export default function CreateDocumentModal({
               <input
                 className="file-input"
                 type="file"
-                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
                 onChange={(event) =>
                   setCreateForm((current) => ({
                     ...current,

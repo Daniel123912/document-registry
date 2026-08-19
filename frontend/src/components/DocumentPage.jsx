@@ -19,6 +19,25 @@ function isPdfFile(filename, mimeType) {
   return mimeType === "application/pdf" || /\.pdf$/i.test(filename || "");
 }
 
+function isWordFile(filename, mimeType) {
+  return (
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    /\.docx$/i.test(filename || "")
+  );
+}
+
+function isLegacyWordFile(filename, mimeType) {
+  return mimeType === "application/msword" || /\.doc$/i.test(filename || "");
+}
+
+function isSpreadsheetFile(filename, mimeType) {
+  return (
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    /\.xlsx?$/i.test(filename || "")
+  );
+}
+
 function versionLabel(versionNo, activeVersionNo) {
   if (!versionNo) {
     return "Черновик";
@@ -59,6 +78,8 @@ export default function DocumentPage({
   const [filePreview, setFilePreview] = useState({
     url: null,
     mimeType: null,
+    docHtml: "",
+    sheets: [],
     loading: false,
     error: "",
   });
@@ -114,28 +135,57 @@ export default function DocumentPage({
         return;
       }
 
-      setFilePreview({ url: null, mimeType: null, loading: true, error: "" });
+      setFilePreview({
+        url: null,
+        mimeType: null,
+        docHtml: "",
+        sheets: [],
+        loading: true,
+        error: "",
+      });
 
       try {
         const result = await fetchDocumentFile(token, document.id, previewVersionNo || undefined);
         objectUrl = result.objectUrl;
+        const nextPreview = {
+          url: result.objectUrl,
+          mimeType: result.mimeType,
+          docHtml: "",
+          sheets: [],
+          loading: false,
+          error: "",
+        };
+
+        if (isWordFile(previewFile.name, result.mimeType)) {
+          const mammoth = await import("mammoth");
+          const arrayBuffer = await result.blob.arrayBuffer();
+          const rendered = await mammoth.convertToHtml({ arrayBuffer });
+          nextPreview.docHtml = rendered.value;
+        }
+
+        if (isSpreadsheetFile(previewFile.name, result.mimeType)) {
+          const XLSX = await import("xlsx");
+          const arrayBuffer = await result.blob.arrayBuffer();
+          const workbook = XLSX.read(arrayBuffer, { type: "array" });
+          nextPreview.sheets = workbook.SheetNames.map((sheetName) => ({
+            name: sheetName,
+            html: XLSX.utils.sheet_to_html(workbook.Sheets[sheetName]),
+          }));
+        }
 
         if (cancelled) {
           URL.revokeObjectURL(objectUrl);
           return;
         }
 
-        setFilePreview({
-          url: result.objectUrl,
-          mimeType: result.mimeType,
-          loading: false,
-          error: "",
-        });
+        setFilePreview(nextPreview);
       } catch (requestError) {
         if (!cancelled) {
           setFilePreview({
             url: null,
             mimeType: null,
+            docHtml: "",
+            sheets: [],
             loading: false,
             error: requestError.message,
           });
@@ -151,7 +201,7 @@ export default function DocumentPage({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [token, document.id, previewVersionNo]);
+  }, [token, document.id, previewVersionNo, previewFile.name]);
 
   function handleSave(event) {
     event.preventDefault();
@@ -299,6 +349,35 @@ export default function DocumentPage({
                 <img src={previewFile.url} alt={previewFile.name} />
               ) : previewFile.url && isPdfFile(previewFile.name, previewFile.mimeType) ? (
                 <iframe title={previewFile.name} src={previewFile.url} />
+              ) : previewFile.url && isWordFile(previewFile.name, previewFile.mimeType) ? (
+                filePreview.docHtml ? (
+                  <div className="preview-docx">
+                    <div
+                      className="preview-docx-page"
+                      dangerouslySetInnerHTML={{ __html: filePreview.docHtml }}
+                    />
+                  </div>
+                ) : (
+                  <div className="preview-empty">Не удалось подготовить предпросмотр Word.</div>
+                )
+              ) : previewFile.url && isSpreadsheetFile(previewFile.name, previewFile.mimeType) ? (
+                filePreview.sheets.length ? (
+                  <div className="preview-sheet-list">
+                    {filePreview.sheets.map((sheet) => (
+                      <section className="preview-sheet" key={sheet.name}>
+                        <h3>{sheet.name}</h3>
+                        <div dangerouslySetInnerHTML={{ __html: sheet.html }} />
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="preview-empty">Не удалось подготовить предпросмотр Excel.</div>
+                )
+              ) : previewFile.url && isLegacyWordFile(previewFile.name, previewFile.mimeType) ? (
+                <div className="preview-empty">
+                  Предпросмотр старого формата Word `.doc` не поддерживается. Откройте или скачайте
+                  файл.
+                </div>
               ) : previewFile.url ? (
                 <div className="preview-empty">Предпросмотр для этого типа файла недоступен.</div>
               ) : (
@@ -519,7 +598,7 @@ export default function DocumentPage({
             <input
               className="file-input"
               type="file"
-              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
               onChange={(event) =>
                 setVersionForm((current) => ({
                   ...current,

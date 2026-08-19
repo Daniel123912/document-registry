@@ -673,12 +673,12 @@ a {
 
 .preview-stage {
   min-height: 420px;
+  max-height: 75vh;
   border: 1px solid #e6edf4;
   border-radius: 12px;
   background: #f7f9fc;
   overflow: auto;
   display: grid;
-  place-items: center;
 }
 
 .preview-stage img,
@@ -687,6 +687,77 @@ a {
   min-height: 420px;
   border: 0;
   background: #fff;
+}
+
+.preview-docx,
+.preview-sheet-list {
+  width: 100%;
+  min-height: 420px;
+}
+
+.preview-docx {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+}
+
+.preview-docx-page {
+  width: min(794px, 100%);
+  min-height: calc(1123px - 64px);
+  padding: 64px 72px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(43, 58, 74, 0.12);
+  color: #23313f;
+  line-height: 1.6;
+}
+
+.preview-docx-page :is(p, ul, ol, table) {
+  margin-top: 0;
+}
+
+.preview-docx-page table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.preview-docx-page :is(th, td) {
+  border: 1px solid #dfe7f0;
+  padding: 6px 8px;
+  vertical-align: top;
+}
+
+.preview-sheet-list {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.preview-sheet {
+  border: 1px solid #e6edf4;
+  border-radius: 10px;
+  overflow: auto;
+}
+
+.preview-sheet h3 {
+  margin: 0;
+  padding: 12px 14px;
+  background: #f6f9fc;
+  border-bottom: 1px solid #e6edf4;
+  font-size: 14px;
+  color: #314354;
+}
+
+.preview-sheet table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.preview-sheet :is(th, td) {
+  border: 1px solid #e6edf4;
+  padding: 6px 8px;
+  font-size: 13px;
+  text-align: left;
 }
 
 .preview-empty {

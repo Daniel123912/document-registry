@@ -59,7 +59,7 @@ frontend/src/
 
 ### 2. `backend/uploads/` — сами документы
 
-PDF, DOC, DOCX и изображения пишутся на диск, не в PostgreSQL.
+PDF, Word, Excel и изображения пишутся на диск, не в PostgreSQL.
 
 | Что | Где |
 | --- | --- |
