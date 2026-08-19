@@ -1,5 +1,5 @@
-const { initializeDatabase } = require("./db");
-const { seedDefaultUsers } = require("./seedData");
+const { initializeDatabase } = require("../db");
+const { seedDefaultUsers } = require("./users");
 
 async function seed() {
   await initializeDatabase();

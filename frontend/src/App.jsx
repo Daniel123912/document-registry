@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import "./App.css";
+import "./styles/app.css";
 import {
   acknowledgeDocument,
   archiveDocument,
@@ -9,27 +9,23 @@ import {
   fetchAssignedDocuments,
   fetchDocuments,
   fetchReport,
+  fetchTrashDocuments,
   fetchUsers,
   login,
+  permanentDeleteDocument,
   publishDocument,
+  restoreDocument,
   updateDocument,
-} from "./api";
-import { withReadableFilenames } from "./filenames";
-import DocumentPage from "./DocumentPage";
-
-const TYPE_OPTIONS = [
-  { value: "order", label: "Приказы / Решения" },
-  { value: "regulation", label: "Регламенты" },
-  { value: "instruction", label: "Инструкции" },
-  { value: "new_goods", label: "Новые товары" },
-  { value: "other", label: "Другое" },
-];
-
-const SORT_OPTIONS = [
-  { value: "new", label: "Сортировка: новые сначала" },
-  { value: "old", label: "Сортировка: старые сначала" },
-  { value: "title", label: "Сортировка: по названию" },
-];
+} from "./api/client";
+import { withReadableFilenames } from "./utils/filenames";
+import { addDays, toIsoDate } from "./utils/dates";
+import { typeLabel } from "./constants";
+import LoginPage from "./pages/LoginPage";
+import Sidebar from "./components/Sidebar";
+import DocumentList from "./components/DocumentList";
+import ReportTable from "./components/ReportTable";
+import CreateDocumentModal from "./components/CreateDocumentModal";
+import DocumentPage from "./components/DocumentPage";
 
 const emptyCreateForm = {
   title: "",
@@ -44,32 +40,6 @@ const emptyVersionForm = {
   changeReason: "",
   versionFile: null,
 };
-
-function toIsoDate(date) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
-function addDays(isoDate, days) {
-  const date = new Date(`${isoDate}T00:00:00`);
-  date.setDate(date.getDate() + days);
-  return toIsoDate(date);
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-  return date.toLocaleDateString("ru-RU");
-}
-
-function typeLabel(type) {
-  return TYPE_OPTIONS.find((option) => option.value === type)?.label || type;
-}
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("bakorToken") || "");
@@ -87,6 +57,7 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [assignedDocuments, setAssignedDocuments] = useState([]);
+  const [trashDocuments, setTrashDocuments] = useState([]);
   const [reportRows, setReportRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState(null);
@@ -103,10 +74,10 @@ function App() {
 
   const selectedDocument = useMemo(
     () =>
-      [...documents, ...assignedDocuments].find(
+      [...documents, ...assignedDocuments, ...trashDocuments].find(
         (document) => document.id === selectedDocumentId
       ) || null,
-    [assignedDocuments, documents, selectedDocumentId]
+    [assignedDocuments, documents, trashDocuments, selectedDocumentId]
   );
 
   const listTitle = useMemo(() => {
@@ -119,10 +90,37 @@ function App() {
     if (section === "archive") {
       return "Список документов: Архив";
     }
+    if (section === "trash") {
+      return "Корзина";
+    }
     return `Список документов: ${typeLabel(activeType)}`;
   }, [activeType, section]);
 
   const visibleDocuments = useMemo(() => {
+    if (section === "trash") {
+      let rows = [...trashDocuments];
+
+      const query = search.trim().toLowerCase();
+      if (query) {
+        rows = rows.filter((document) => {
+          const title = (document.title || "").toLowerCase();
+          const number = (document.number || "").toLowerCase();
+          return title.includes(query) || number.includes(query);
+        });
+      }
+
+      rows = [...rows].sort((left, right) => {
+        if (sort === "title") {
+          return (left.title || "").localeCompare(right.title || "", "ru");
+        }
+        const leftDate = new Date(left.deletedAt || 0).getTime();
+        const rightDate = new Date(right.deletedAt || 0).getTime();
+        return sort === "old" ? leftDate - rightDate : rightDate - leftDate;
+      });
+
+      return rows;
+    }
+
     const source =
       section === "inbox" || !isResponsible ? assignedDocuments : documents;
 
@@ -158,7 +156,7 @@ function App() {
     });
 
     return rows;
-  }, [activeType, assignedDocuments, documents, isResponsible, search, section, sort]);
+  }, [activeType, assignedDocuments, documents, isResponsible, search, section, sort, trashDocuments]);
 
   async function loadData(currentToken = token, currentUser = user) {
     if (!currentToken || !currentUser) {
@@ -175,16 +173,17 @@ function App() {
       ];
 
       if (currentUser.role === "responsible") {
-        requests.push(fetchReport(currentToken), fetchUsers(currentToken));
+        requests.push(fetchReport(currentToken), fetchUsers(currentToken), fetchTrashDocuments(currentToken));
       }
 
-      const [documentsData, assignedData, reportData = [], usersData = []] =
+      const [documentsData, assignedData, reportData = [], usersData = [], trashData = []] =
         await Promise.all(requests);
 
       setDocuments((documentsData || []).map(withReadableFilenames));
       setAssignedDocuments((assignedData || []).map(withReadableFilenames));
       setReportRows(reportData);
       setUsers(usersData);
+      setTrashDocuments((trashData || []).map(withReadableFilenames));
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -236,6 +235,7 @@ function App() {
     setUser(null);
     setDocuments([]);
     setAssignedDocuments([]);
+    setTrashDocuments([]);
     setReportRows([]);
     setUsers([]);
     setNotice("");
@@ -371,7 +371,11 @@ function App() {
   }
 
   async function handleDelete(documentId) {
-    if (!window.confirm("Удалить документ безвозвратно?")) {
+    if (
+      !window.confirm(
+        "Переместить документ в корзину? Его можно будет восстановить в течение 30 дней."
+      )
+    ) {
       return;
     }
     setLoading(true);
@@ -388,9 +392,37 @@ function App() {
     }
   }
 
-  function resetFilters() {
-    setSearch("");
-    setSort("new");
+  async function handleRestore(documentId) {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await restoreDocument(token, documentId);
+      setNotice(result.message);
+      setSelectedDocumentId(null);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePermanentDelete(documentId) {
+    if (!window.confirm("Удалить документ безвозвратно? Это действие нельзя отменить.")) {
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await permanentDeleteDocument(token, documentId);
+      setNotice(result.message);
+      setSelectedDocumentId(null);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function selectType(type) {
@@ -402,383 +434,80 @@ function App() {
 
   if (!token || !user) {
     return (
-      <main className="login-screen">
-        <section className="login-card">
-          <h1>Реестр</h1>
-          <p>Документы, версии и ознакомление сотрудников.</p>
-          <form className="login-form" onSubmit={handleLogin}>
-            <label>
-              Email
-              <input
-                className="field-input"
-                type="email"
-                value={authForm.email}
-                onChange={(event) =>
-                  setAuthForm((current) => ({ ...current, email: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              Пароль
-              <input
-                className="field-input"
-                type="password"
-                value={authForm.password}
-                onChange={(event) =>
-                  setAuthForm((current) => ({ ...current, password: event.target.value }))
-                }
-              />
-            </label>
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Вход..." : "Войти"}
-            </button>
-          </form>
-          <div className="helper">
-            <strong>Демо-учетки:</strong>
-            <div>responsible@bakor.local / admin1234</div>
-            <div>employee@bakor.local / user1234</div>
-          </div>
-          {error ? <div className="alert error">{error}</div> : null}
-        </section>
-      </main>
+      <LoginPage
+        authForm={authForm}
+        setAuthForm={setAuthForm}
+        onSubmit={handleLogin}
+        loading={loading}
+        error={error}
+      />
     );
   }
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <h1 className="logo">Реестр</h1>
-        {isResponsible ? (
-          <button className="create-btn" onClick={openCreateModal}>
-            + Создать документ
-          </button>
-        ) : null}
-
-        <nav className="nav">
-          <button
-            className={section === "inbox" ? "nav-item active" : "nav-item"}
-            onClick={() => {
-              setSection("inbox");
-              setSelectedDocumentId(null);
-            }}
-          >
-            Мои документы
-          </button>
-
-          <div className="nav-title">Рабочие разделы</div>
-
-          <button
-            className="nav-parent"
-            onClick={() => setActiveOpen((current) => !current)}
-          >
-            <span>Действующие документы</span>
-            <span className={activeOpen ? "chevron open" : "chevron"} />
-          </button>
-
-          {activeOpen
-            ? TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={
-                    section === "active" && activeType === option.value
-                      ? "nav-sub active"
-                      : "nav-sub"
-                  }
-                  onClick={() => selectType(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))
-            : null}
-
-          <button
-            className={section === "archive" ? "nav-parent active" : "nav-parent"}
-            onClick={() => {
-              setSection("archive");
-              setSelectedDocumentId(null);
-            }}
-          >
-            <span>Архив</span>
-            <span className="chevron" />
-          </button>
-
-          {isResponsible ? (
-            <button
-              className={section === "report" ? "nav-item active" : "nav-item"}
-              onClick={() => {
-                setSection("report");
-                setSelectedDocumentId(null);
-              }}
-            >
-              Отчеты
-            </button>
-          ) : null}
-        </nav>
-
-        <div className="sidebar-foot">
-          <div>{user.fullName}</div>
-          <div>{isResponsible ? "Ответственный" : "Сотрудник"}</div>
-          <button className="logout-btn" onClick={logout}>
-            Выйти
-          </button>
-        </div>
-      </aside>
+      <Sidebar
+        user={user}
+        isResponsible={isResponsible}
+        section={section}
+        activeType={activeType}
+        activeOpen={activeOpen}
+        onToggleActive={() => setActiveOpen((current) => !current)}
+        onInbox={() => {
+          setSection("inbox");
+          setSelectedDocumentId(null);
+        }}
+        onSelectType={selectType}
+        onArchive={() => {
+          setSection("archive");
+          setSelectedDocumentId(null);
+        }}
+        onTrash={() => {
+          setSection("trash");
+          setSelectedDocumentId(null);
+        }}
+        onReport={() => {
+          setSection("report");
+          setSelectedDocumentId(null);
+        }}
+        onCreate={openCreateModal}
+        onLogout={logout}
+      />
 
       <main className="main">
         {notice ? <div className="alert success">{notice}</div> : null}
         {error ? <div className="alert error">{error}</div> : null}
 
         {section === "report" && isResponsible ? (
-          <section className="list-card">
-            <h2 className="list-title">{listTitle}</h2>
-            <table className="doc-table">
-              <thead>
-                <tr>
-                  <th>Документ</th>
-                  <th>Версия</th>
-                  <th>Назначено</th>
-                  <th>Ознакомились</th>
-                  <th>Ожидают</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reportRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.title}</td>
-                    <td>v{row.activeVersionNo}</td>
-                    <td>{row.assignedCount}</td>
-                    <td>{row.acknowledgedCount}</td>
-                    <td>{row.pendingCount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {reportRows.length === 0 ? (
-              <div className="empty">Отчетов пока нет</div>
-            ) : null}
-          </section>
+          <ReportTable listTitle={listTitle} reportRows={reportRows} />
         ) : (
-          <section className="list-card">
-            <h2 className="list-title">{listTitle}</h2>
-            <div className="toolbar">
-              <input
-                className="search-input"
-                placeholder="Поиск по названию или номеру"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-              <select
-                className="sort-select"
-                value={sort}
-                onChange={(event) => setSort(event.target.value)}
-              >
-                {SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button className="reset-btn" onClick={resetFilters}>
-                Сбросить
-              </button>
-            </div>
-
-            <table className="doc-table">
-              <thead>
-                <tr>
-                  <th>Документ</th>
-                  <th>Тип</th>
-                  <th>Версия</th>
-                  {section === "inbox" ? <th>Статус</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleDocuments.map((document) => (
-                  <tr
-                    key={document.id}
-                    className={selectedDocumentId === document.id ? "active" : ""}
-                    onClick={() => setSelectedDocumentId(document.id)}
-                  >
-                    <td>
-                      <div className="doc-name">{document.title}</div>
-                      <div className="doc-sub">{document.number || formatDate(document.documentDate)}</div>
-                    </td>
-                    <td>{typeLabel(document.type)}</td>
-                    <td>v{document.activeVersionNo || 0}</td>
-                    {section === "inbox" ? (
-                      <td>
-                        <span className={`status ${document.isAcknowledged ? "ok" : "warn"}`}>
-                          {document.isAcknowledged ? "Ознакомлен" : "Ожидается"}
-                        </span>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {visibleDocuments.length === 0 ? (
-              <div className="empty">
-                {section === "archive"
-                  ? "В архиве пока нет документов"
-                  : search
-                    ? "Ничего не найдено"
-                    : "Документов этого типа пока нет"}
-              </div>
-            ) : null}
-          </section>
+          <DocumentList
+            listTitle={listTitle}
+            section={section}
+            search={search}
+            sort={sort}
+            visibleDocuments={visibleDocuments}
+            selectedDocumentId={selectedDocumentId}
+            onSearch={setSearch}
+            onSort={setSort}
+            onReset={() => {
+              setSearch("");
+              setSort("new");
+            }}
+            onSelect={setSelectedDocumentId}
+          />
         )}
       </main>
 
       {createOpen ? (
-        <div className="overlay" onClick={() => setCreateOpen(false)}>
-          <form
-            className="modal"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={handleCreateDocument}
-          >
-            <div className="modal-body">
-              <h2 className="modal-title">Создать документ</h2>
-              <div className="form-grid">
-                <div className="form-row">
-                  <label className="form-field">
-                    Тип
-                    <select
-                      className="field-select"
-                      value={createForm.type}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({ ...current, type: event.target.value }))
-                      }
-                    >
-                      {TYPE_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="form-field">
-                    Дата документа
-                    <input
-                      className="field-input"
-                      type="date"
-                      value={createForm.documentDate}
-                      onChange={(event) =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          documentDate: event.target.value,
-                        }))
-                      }
-                      required
-                    />
-                  </label>
-                </div>
-
-                <label className="form-field">
-                  Название документа
-                  <input
-                    className="field-input"
-                    value={createForm.title}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({ ...current, title: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-
-                <label className="form-field">
-                  Описание
-                  <textarea
-                    rows="4"
-                    placeholder="Краткое описание документа"
-                    value={createForm.description}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-
-                <div className="form-field">
-                  <span>Сотрудники для ознакомления</span>
-                  <div className="users-toolbar">
-                    <button
-                      className="link-btn"
-                      type="button"
-                      onClick={() =>
-                        setCreateForm((current) => ({
-                          ...current,
-                          assignedUsers: employeeUsers.map((candidate) => candidate.id),
-                        }))
-                      }
-                    >
-                      Выбрать всех
-                    </button>
-                    <button
-                      className="link-btn"
-                      type="button"
-                      onClick={() =>
-                        setCreateForm((current) => ({ ...current, assignedUsers: [] }))
-                      }
-                    >
-                      Снять выделение
-                    </button>
-                  </div>
-                  <div className="users-box">
-                    {employeeUsers.map((candidate) => (
-                      <label className="user-check" key={candidate.id}>
-                        <input
-                          type="checkbox"
-                          checked={createForm.assignedUsers.includes(candidate.id)}
-                          onChange={(event) =>
-                            setCreateForm((current) => ({
-                              ...current,
-                              assignedUsers: event.target.checked
-                                ? [...current.assignedUsers, candidate.id]
-                                : current.assignedUsers.filter((id) => id !== candidate.id),
-                            }))
-                          }
-                        />
-                        <span>
-                          {candidate.fullName} ({candidate.email})
-                        </span>
-                      </label>
-                    ))}
-                    {employeeUsers.length === 0 ? (
-                      <div className="muted">Сотрудники пока не загружены</div>
-                    ) : null}
-                  </div>
-                </div>
-
-                <label className="form-field">
-                  Файл документа
-                  <input
-                    className="file-input"
-                    type="file"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        docFile: event.target.files?.[0] || null,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="modal-foot">
-              <button className="btn cancel" type="button" onClick={() => setCreateOpen(false)}>
-                Отмена
-              </button>
-              <button className="btn primary" type="submit" disabled={loading}>
-                {loading ? "Сохранение..." : "Создать документ"}
-              </button>
-            </div>
-          </form>
-        </div>
+        <CreateDocumentModal
+          createForm={createForm}
+          setCreateForm={setCreateForm}
+          employeeUsers={employeeUsers}
+          loading={loading}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={handleCreateDocument}
+        />
       ) : null}
 
       {selectedDocument ? (
@@ -788,14 +517,15 @@ function App() {
               document={selectedDocument}
               users={users}
               isResponsible={isResponsible}
+              isTrash={section === "trash"}
               loading={loading}
-              typeLabel={typeLabel}
-              formatDate={formatDate}
-              typeOptions={TYPE_OPTIONS}
+              token={token}
               onClose={() => setSelectedDocumentId(null)}
               onSaveRequisites={handleSaveRequisites}
               onArchive={handleArchive}
               onDelete={handleDelete}
+              onRestore={handleRestore}
+              onPermanentDelete={handlePermanentDelete}
               onCreateVersion={handleCreateVersion}
               onAcknowledge={handleAcknowledge}
               onPublish={handlePublish}

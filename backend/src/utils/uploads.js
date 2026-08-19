@@ -1,10 +1,9 @@
-const path = require("path");
 const multer = require("multer");
-const { uploadsDir } = require("./config");
+const { uploadsTmpDir } = require("../config");
 const { decodeOriginalFilename } = require("./filenames");
 
 const storage = multer.diskStorage({
-  destination: uploadsDir,
+  destination: uploadsTmpDir,
   filename: (req, file, callback) => {
     const originalName = decodeOriginalFilename(file.originalname);
     const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -35,11 +34,6 @@ const upload = multer({
   },
 });
 
-function fileUrl(req, relativePath) {
-  return `${req.protocol}://${req.get("host")}/uploads/${path.basename(relativePath)}`;
-}
-
 module.exports = {
   upload,
-  fileUrl,
 };

@@ -1,5 +1,5 @@
-const { query } = require("./db");
-const { hashPassword } = require("./auth");
+const { query } = require("../db");
+const { hashPassword } = require("../auth");
 
 async function seedDefaultUsers() {
   const existingUsers = await query("SELECT COUNT(*)::int AS count FROM users");

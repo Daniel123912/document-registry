@@ -314,6 +314,17 @@ textarea::placeholder {
   color: #8f2121;
 }
 
+.alert.warn {
+  background: #fff4df;
+  color: #8a5a00;
+}
+
+.list-hint {
+  margin: -4px 0 14px;
+  color: #667788;
+  font-size: 14px;
+}
+
 .overlay {
   position: fixed;
   inset: 0;

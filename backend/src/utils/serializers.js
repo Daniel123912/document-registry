@@ -28,6 +28,7 @@ function normalizeDocument(row) {
       : [],
     assignedUsers: Array.isArray(row.assigned_users) ? row.assigned_users : [],
     isAcknowledged: Boolean(row.is_acknowledged),
+    deletedAt: row.deleted_at || null,
   };
 }
 

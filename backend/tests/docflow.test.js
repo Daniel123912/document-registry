@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { newDb } = require("pg-mem");
-const { schemaStatements } = require("./schema");
+const { schemaStatements } = require("../src/db/schema");
 
 async function createDatabase() {
   const db = newDb();

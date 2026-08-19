@@ -1,24 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchDocumentFile } from "../api/client";
+import { TYPE_OPTIONS, typeLabel } from "../constants";
+import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
 
 const emptyVersionForm = {
   changeReason: "",
   versionFile: null,
 };
-
-function toIsoDateValue(value) {
-  if (!value) {
-    return "";
-  }
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return value.slice(0, 10);
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
 
 function isImageFile(filename, mimeType) {
   return (
@@ -42,14 +30,15 @@ export default function DocumentPage({
   document,
   users,
   isResponsible,
+  isTrash = false,
   loading,
-  typeLabel,
-  formatDate,
-  typeOptions,
+  token,
   onClose,
   onSaveRequisites,
   onArchive,
   onDelete,
+  onRestore,
+  onPermanentDelete,
   onCreateVersion,
   onAcknowledge,
   onPublish,
@@ -67,6 +56,12 @@ export default function DocumentPage({
     assignedUsers: (document.assignedUsers || []).map((user) => user.id),
   });
   const [versionForm, setVersionForm] = useState(emptyVersionForm);
+  const [filePreview, setFilePreview] = useState({
+    url: null,
+    mimeType: null,
+    loading: false,
+    error: "",
+  });
 
   const employeeUsers = users.filter((candidate) => candidate.role === "employee");
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
@@ -78,19 +73,19 @@ export default function DocumentPage({
     const selected = versions.find((version) => version.versionNo === previewVersionNo);
     if (selected) {
       return {
-        url: selected.fileUrl,
+        url: filePreview.url,
         name: selected.originalFilename,
-        mimeType: selected.mimeType,
+        mimeType: filePreview.mimeType || selected.mimeType,
         label: versionLabel(selected.versionNo, document.activeVersionNo),
       };
     }
     return {
-      url: document.currentFileUrl,
+      url: filePreview.url,
       name: document.currentFilename,
-      mimeType: document.currentMimeType,
+      mimeType: filePreview.mimeType || document.currentMimeType,
       label: versionLabel(document.activeVersionNo, document.activeVersionNo),
     };
-  }, [document, previewVersionNo]);
+  }, [document, previewVersionNo, filePreview]);
 
   useEffect(() => {
     setTab("preview");
@@ -109,6 +104,54 @@ export default function DocumentPage({
   useEffect(() => {
     setPreviewVersionNo(document.activeVersionNo || 0);
   }, [document.activeVersionNo]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl;
+
+    async function loadFile() {
+      if (!token || !document.id) {
+        return;
+      }
+
+      setFilePreview({ url: null, mimeType: null, loading: true, error: "" });
+
+      try {
+        const result = await fetchDocumentFile(token, document.id, previewVersionNo || undefined);
+        objectUrl = result.objectUrl;
+
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        setFilePreview({
+          url: result.objectUrl,
+          mimeType: result.mimeType,
+          loading: false,
+          error: "",
+        });
+      } catch (requestError) {
+        if (!cancelled) {
+          setFilePreview({
+            url: null,
+            mimeType: null,
+            loading: false,
+            error: requestError.message,
+          });
+        }
+      }
+    }
+
+    loadFile();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [token, document.id, previewVersionNo]);
 
   function handleSave(event) {
     event.preventDefault();
@@ -146,11 +189,18 @@ export default function DocumentPage({
       {notice ? <div className="alert success">{notice}</div> : null}
       {error ? <div className="alert error">{error}</div> : null}
 
+      {isTrash ? (
+        <div className="alert warn">
+          Документ в корзине. Осталось {daysUntilTrashPurge(document.deletedAt)} дн. до
+          безвозвратного удаления.
+        </div>
+      ) : null}
+
       <div className="doc-tabs">
         <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
           Просмотр
         </button>
-        {isResponsible ? (
+        {isResponsible && !isTrash ? (
           <button
             className={tab === "requisites" ? "active" : ""}
             onClick={() => setTab("requisites")}
@@ -158,7 +208,7 @@ export default function DocumentPage({
             Реквизиты
           </button>
         ) : null}
-        {isResponsible ? (
+        {isResponsible && !isTrash ? (
           <button className={tab === "version" ? "active" : ""} onClick={() => setTab("version")}>
             Новая версия
           </button>
@@ -234,14 +284,18 @@ export default function DocumentPage({
               <strong>{previewFile.label}</strong>
               <span className="preview-filename">{previewFile.name || "Файл не найден"}</span>
               {previewFile.url ? (
-                <a className="btn cancel" href={previewFile.url} download>
+                <a className="btn cancel" href={previewFile.url} download={previewFile.name || true}>
                   Скачать файл
                 </a>
               ) : null}
             </div>
 
             <div className="preview-stage">
-              {previewFile.url && isImageFile(previewFile.name, previewFile.mimeType) ? (
+              {filePreview.loading ? (
+                <div className="preview-empty">Загрузка файла...</div>
+              ) : filePreview.error ? (
+                <div className="preview-empty">{filePreview.error}</div>
+              ) : previewFile.url && isImageFile(previewFile.name, previewFile.mimeType) ? (
                 <img src={previewFile.url} alt={previewFile.name} />
               ) : previewFile.url && isPdfFile(previewFile.name, previewFile.mimeType) ? (
                 <iframe title={previewFile.name} src={previewFile.url} />
@@ -259,12 +313,32 @@ export default function DocumentPage({
             ) : null}
 
             <div className="doc-actions">
-              {isResponsible && document.status === "draft" ? (
+              {isTrash && isResponsible ? (
+                <>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => onRestore(document.id)}
+                  >
+                    Восстановить
+                  </button>
+                  <button
+                    className="btn danger-text"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => onPermanentDelete(document.id)}
+                  >
+                    Удалить безвозвратно
+                  </button>
+                </>
+              ) : null}
+              {!isTrash && isResponsible && document.status === "draft" ? (
                 <button className="btn primary" type="button" onClick={() => onPublish(document.id)}>
                   Опубликовать
                 </button>
               ) : null}
-              {!isResponsible && !document.isAcknowledged ? (
+              {!isTrash && !isResponsible && !document.isAcknowledged ? (
                 <button
                   className="btn primary"
                   type="button"
@@ -278,7 +352,7 @@ export default function DocumentPage({
         </div>
       ) : null}
 
-      {tab === "requisites" && isResponsible ? (
+      {tab === "requisites" && isResponsible && !isTrash ? (
         <form className="doc-form" onSubmit={handleSave}>
           <div className="form-grid">
             <div className="form-row equal">
@@ -291,7 +365,7 @@ export default function DocumentPage({
                     setEditForm((current) => ({ ...current, type: event.target.value }))
                   }
                 >
-                  {typeOptions.map((option) => (
+                  {TYPE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -426,7 +500,7 @@ export default function DocumentPage({
         </form>
       ) : null}
 
-      {tab === "version" && isResponsible ? (
+      {tab === "version" && isResponsible && !isTrash ? (
         <form className="doc-form" onSubmit={handleNewVersion}>
           <label className="form-field">
             Причина новой версии

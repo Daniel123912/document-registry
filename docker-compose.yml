@@ -1,16 +1,23 @@
+name: bakor-docflow
+
 services:
   postgres:
     image: postgres:17
     container_name: bakor-docflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: bakor_docflow
+      POSTGRES_DB: my_project_db
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: 123456
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d my_project_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:

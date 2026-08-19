@@ -25,6 +25,8 @@ const schemaStatements = [
       draft_original_filename TEXT,
       draft_mime_type TEXT,
       active_version_no INTEGER NOT NULL DEFAULT 0,
+      deleted_at TIMESTAMPTZ,
+      deleted_by BIGINT REFERENCES users(id),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );

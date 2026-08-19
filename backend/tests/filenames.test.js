@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { decodeOriginalFilename } = require("./filenames");
+const { decodeOriginalFilename } = require("../src/utils/filenames");
 
 test("decodes multer latin1 mojibake for cyrillic filenames", () => {
   const garbled = Buffer.from("Текущая карточка товара.pdf", "utf8").toString("latin1");
