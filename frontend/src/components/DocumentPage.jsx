@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchDocumentFile } from "../api/client";
 import { TYPE_OPTIONS, typeLabel } from "../constants";
 import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
@@ -38,6 +38,78 @@ function isSpreadsheetFile(filename, mimeType) {
   );
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) {
+    return "";
+  }
+  if (size < 1024) {
+    return `${size} Б`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} КБ`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function pdfViewerSrc(url) {
+  return url ? `${url}#toolbar=1&navpanes=0` : "";
+}
+
+async function blobLooksLikeHtml(blob) {
+  try {
+    const head = (await blob.slice(0, 256).text()).trim();
+    return /^<(?:!doctype\s+html|html|head|body|table)\b/i.test(head);
+  } catch {
+    return false;
+  }
+}
+
+function extractHtmlTable(html) {
+  const match = String(html || "").match(/<table[\s\S]*<\/table>/i);
+  return match ? match[0] : "";
+}
+
+function previewFilename(document, previewVersionNo) {
+  const versions = document.versions || [];
+  const selected = versions.find((version) => version.versionNo === previewVersionNo);
+  return selected?.originalFilename || document.currentFilename || "";
+}
+
+const MAX_PREVIEW_PARSE_BYTES = 15 * 1024 * 1024;
+const MAX_SHEET_PREVIEW_CELLS = 20000;
+
+function sheetToPreviewHtml(sheet, xlsx) {
+  if (!sheet || !xlsx?.utils || !sheet["!ref"]) {
+    return "";
+  }
+
+  try {
+    const range = xlsx.utils.decode_range(sheet["!ref"]);
+    const rows = range.e.r - range.s.r + 1;
+    const cols = range.e.c - range.s.c + 1;
+    const cellCount = rows * cols;
+    let previewSheet = sheet;
+
+    if (cellCount > MAX_SHEET_PREVIEW_CELLS) {
+      previewSheet = {
+        ...sheet,
+        "!ref": xlsx.utils.encode_range({
+          s: range.s,
+          e: {
+            r: range.s.r + Math.min(rows, 150) - 1,
+            c: range.s.c + Math.min(cols, 40) - 1,
+          },
+        }),
+      };
+    }
+
+    return xlsx.utils.sheet_to_html(previewSheet, { header: "", footer: "" });
+  } catch {
+    return "";
+  }
+}
+
 function versionLabel(versionNo, activeVersionNo) {
   if (!versionNo) {
     return "Черновик";
@@ -66,6 +138,11 @@ export default function DocumentPage({
 }) {
   const [tab, setTab] = useState("preview");
   const [previewVersionNo, setPreviewVersionNo] = useState(document.activeVersionNo || 0);
+  const [activeSheetName, setActiveSheetName] = useState("");
+  const [previewScale, setPreviewScale] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const previewStageRef = useRef(null);
+  const spreadsheetRef = useRef({ workbook: null, xlsx: null });
   const [editForm, setEditForm] = useState({
     title: document.title || "",
     type: document.type,
@@ -79,12 +156,15 @@ export default function DocumentPage({
     url: null,
     mimeType: null,
     docHtml: "",
-    sheets: [],
+    sheetNames: [],
+    size: 0,
     loading: false,
     error: "",
   });
 
-  const employeeUsers = users.filter((candidate) => candidate.role === "employee");
+  const employeeUsers = (Array.isArray(users) ? users : []).filter(
+    (candidate) => candidate.role === "employee"
+  );
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
   const ackDone = document.acknowledgedCount || 0;
   const ackPercent = ackTotal ? Math.round((ackDone / ackTotal) * 100) : 0;
@@ -108,6 +188,36 @@ export default function DocumentPage({
     };
   }, [document, previewVersionNo, filePreview]);
 
+  const canZoom =
+    isImageFile(previewFile.name, previewFile.mimeType) ||
+    isWordFile(previewFile.name, previewFile.mimeType) ||
+    isSpreadsheetFile(previewFile.name, previewFile.mimeType);
+
+  const stageKind =
+    filePreview.loading || filePreview.error
+      ? "empty"
+      : isPdfFile(previewFile.name, previewFile.mimeType)
+        ? "embed"
+        : isImageFile(previewFile.name, previewFile.mimeType)
+          ? "image"
+          : isSpreadsheetFile(previewFile.name, previewFile.mimeType)
+            ? "sheet"
+            : isWordFile(previewFile.name, previewFile.mimeType)
+              ? "docx"
+              : "empty";
+
+  const activeSheetHtml = useMemo(() => {
+    const { workbook, xlsx } = spreadsheetRef.current;
+    if (!workbook || !xlsx || !activeSheetName) {
+      return "";
+    }
+    const sheet = workbook.Sheets[activeSheetName];
+    if (!sheet) {
+      return "";
+    }
+    return sheetToPreviewHtml(sheet, xlsx);
+  }, [activeSheetName, filePreview.sheetNames, filePreview.loading]);
+
   useEffect(() => {
     setTab("preview");
     setPreviewVersionNo(document.activeVersionNo || 0);
@@ -127,6 +237,31 @@ export default function DocumentPage({
   }, [document.activeVersionNo]);
 
   useEffect(() => {
+    setPreviewScale(1);
+  }, [document.id, previewVersionNo]);
+
+  useEffect(() => {
+    if (!filePreview.sheetNames.length) {
+      setActiveSheetName("");
+      return;
+    }
+
+    setActiveSheetName((current) =>
+      filePreview.sheetNames.includes(current) ? current : filePreview.sheetNames[0]
+    );
+  }, [filePreview.sheetNames]);
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      const stage = previewStageRef.current;
+      setIsFullscreen(Boolean(stage && window.document.fullscreenElement === stage));
+    }
+
+    window.document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => window.document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     let objectUrl;
 
@@ -135,11 +270,13 @@ export default function DocumentPage({
         return;
       }
 
+      spreadsheetRef.current = { workbook: null, xlsx: null };
       setFilePreview({
         url: null,
         mimeType: null,
         docHtml: "",
-        sheets: [],
+        sheetNames: [],
+        size: 0,
         loading: true,
         error: "",
       });
@@ -147,30 +284,57 @@ export default function DocumentPage({
       try {
         const result = await fetchDocumentFile(token, document.id, previewVersionNo || undefined);
         objectUrl = result.objectUrl;
+        const filename = previewFilename(document, previewVersionNo);
         const nextPreview = {
           url: result.objectUrl,
           mimeType: result.mimeType,
           docHtml: "",
-          sheets: [],
+          sheetNames: [],
+          size: result.size || 0,
           loading: false,
           error: "",
         };
+        const canParsePreview = (result.size || 0) <= MAX_PREVIEW_PARSE_BYTES;
 
-        if (isWordFile(previewFile.name, result.mimeType)) {
-          const mammoth = await import("mammoth");
-          const arrayBuffer = await result.blob.arrayBuffer();
-          const rendered = await mammoth.convertToHtml({ arrayBuffer });
-          nextPreview.docHtml = rendered.value;
+        if (isWordFile(filename, result.mimeType) && canParsePreview) {
+          try {
+            const mammoth = await import("mammoth");
+            const arrayBuffer = await result.blob.arrayBuffer();
+            const rendered = await mammoth.convertToHtml(
+              { arrayBuffer },
+              {
+                convertImage: mammoth.images.imgElement(async (image) => {
+                  const imageBuffer = await image.read("base64");
+                  return { src: `data:${image.contentType};base64,${imageBuffer}` };
+                }),
+              }
+            );
+            nextPreview.docHtml = rendered.value;
+          } catch {
+            nextPreview.docHtml = "";
+          }
         }
 
-        if (isSpreadsheetFile(previewFile.name, result.mimeType)) {
-          const XLSX = await import("xlsx");
-          const arrayBuffer = await result.blob.arrayBuffer();
-          const workbook = XLSX.read(arrayBuffer, { type: "array" });
-          nextPreview.sheets = workbook.SheetNames.map((sheetName) => ({
-            name: sheetName,
-            html: XLSX.utils.sheet_to_html(workbook.Sheets[sheetName]),
-          }));
+        if (isSpreadsheetFile(filename, result.mimeType) && canParsePreview) {
+          try {
+            if (await blobLooksLikeHtml(result.blob)) {
+              const html = await result.blob.text();
+              nextPreview.docHtml = extractHtmlTable(html);
+            } else {
+              const XLSX = await import("xlsx");
+              const arrayBuffer = await result.blob.arrayBuffer();
+              const workbook = XLSX.read(arrayBuffer, {
+                type: "array",
+                cellDates: true,
+              });
+              spreadsheetRef.current = { workbook, xlsx: XLSX };
+              nextPreview.sheetNames = workbook.SheetNames || [];
+            }
+          } catch {
+            spreadsheetRef.current = { workbook: null, xlsx: null };
+            nextPreview.sheetNames = [];
+            nextPreview.docHtml = "";
+          }
         }
 
         if (cancelled) {
@@ -185,7 +349,8 @@ export default function DocumentPage({
             url: null,
             mimeType: null,
             docHtml: "",
-            sheets: [],
+            sheetNames: [],
+            size: 0,
             loading: false,
             error: requestError.message,
           });
@@ -201,7 +366,7 @@ export default function DocumentPage({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [token, document.id, previewVersionNo, previewFile.name]);
+  }, [token, document.id, previewVersionNo]);
 
   function handleSave(event) {
     event.preventDefault();
@@ -219,6 +384,28 @@ export default function DocumentPage({
     event.preventDefault();
     onCreateVersion(event, document.id, versionForm);
     setTab("preview");
+  }
+
+  async function toggleFullscreen() {
+    const stage = previewStageRef.current;
+    if (!stage) {
+      return;
+    }
+
+    try {
+      if (window.document.fullscreenElement === stage) {
+        await window.document.exitFullscreen();
+        return;
+      }
+
+      await stage.requestFullscreen();
+    } catch {
+      setIsFullscreen(false);
+    }
+  }
+
+  function adjustPreviewScale(delta) {
+    setPreviewScale((current) => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2)))));
   }
 
   return (
@@ -306,7 +493,10 @@ export default function DocumentPage({
                     }
                     onClick={() => setPreviewVersionNo(version.versionNo)}
                   >
-                    {versionLabel(version.versionNo, document.activeVersionNo)}
+                    <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
+                    {version.changeReason ? (
+                      <small>{version.changeReason}</small>
+                    ) : null}
                   </button>
                 ))
               )}
@@ -333,6 +523,25 @@ export default function DocumentPage({
             <div className="preview-toolbar">
               <strong>{previewFile.label}</strong>
               <span className="preview-filename">{previewFile.name || "Файл не найден"}</span>
+              {filePreview.size ? (
+                <span className="preview-filesize">{formatFileSize(filePreview.size)}</span>
+              ) : null}
+              {canZoom && !filePreview.loading && previewFile.url ? (
+                <div className="preview-zoom">
+                  <button type="button" onClick={() => adjustPreviewScale(-0.25)} aria-label="Уменьшить">
+                    −
+                  </button>
+                  <span>{Math.round(previewScale * 100)}%</span>
+                  <button type="button" onClick={() => adjustPreviewScale(0.25)} aria-label="Увеличить">
+                    +
+                  </button>
+                </div>
+              ) : null}
+              {previewFile.url ? (
+                <button className="btn cancel" type="button" onClick={toggleFullscreen}>
+                  {isFullscreen ? "Свернуть" : "На весь экран"}
+                </button>
+              ) : null}
               {previewFile.url ? (
                 <a className="btn cancel" href={previewFile.url} download={previewFile.name || true}>
                   Скачать файл
@@ -340,15 +549,22 @@ export default function DocumentPage({
               ) : null}
             </div>
 
-            <div className="preview-stage">
+            <div
+              className={`preview-stage preview-stage-${stageKind}${isFullscreen ? " is-fullscreen" : ""}`}
+              ref={previewStageRef}
+              style={{ "--preview-scale": previewScale }}
+            >
               {filePreview.loading ? (
-                <div className="preview-empty">Загрузка файла...</div>
+                <div className="preview-empty preview-loading">
+                  <span className="preview-spinner" />
+                  Загрузка файла...
+                </div>
               ) : filePreview.error ? (
                 <div className="preview-empty">{filePreview.error}</div>
               ) : previewFile.url && isImageFile(previewFile.name, previewFile.mimeType) ? (
                 <img src={previewFile.url} alt={previewFile.name} />
               ) : previewFile.url && isPdfFile(previewFile.name, previewFile.mimeType) ? (
-                <iframe title={previewFile.name} src={previewFile.url} />
+                <iframe title={previewFile.name} src={pdfViewerSrc(previewFile.url)} />
               ) : previewFile.url && isWordFile(previewFile.name, previewFile.mimeType) ? (
                 filePreview.docHtml ? (
                   <div className="preview-docx">
@@ -361,14 +577,39 @@ export default function DocumentPage({
                   <div className="preview-empty">Не удалось подготовить предпросмотр Word.</div>
                 )
               ) : previewFile.url && isSpreadsheetFile(previewFile.name, previewFile.mimeType) ? (
-                filePreview.sheets.length ? (
+                filePreview.sheetNames.length ? (
                   <div className="preview-sheet-list">
-                    {filePreview.sheets.map((sheet) => (
-                      <section className="preview-sheet" key={sheet.name}>
-                        <h3>{sheet.name}</h3>
-                        <div dangerouslySetInnerHTML={{ __html: sheet.html }} />
-                      </section>
-                    ))}
+                    <div className="preview-sheet-tabs">
+                      {filePreview.sheetNames.map((sheetName) => (
+                        <button
+                          key={sheetName}
+                          type="button"
+                          className={
+                            sheetName === activeSheetName
+                              ? "preview-sheet-tab active"
+                              : "preview-sheet-tab"
+                          }
+                          onClick={() => setActiveSheetName(sheetName)}
+                        >
+                          {sheetName}
+                        </button>
+                      ))}
+                    </div>
+                    <section className="preview-sheet">
+                      <div
+                        className="preview-sheet-frame"
+                        dangerouslySetInnerHTML={{ __html: activeSheetHtml }}
+                      />
+                    </section>
+                  </div>
+                ) : filePreview.docHtml ? (
+                  <div className="preview-sheet-list">
+                    <section className="preview-sheet">
+                      <div
+                        className="preview-sheet-frame"
+                        dangerouslySetInnerHTML={{ __html: filePreview.docHtml }}
+                      />
+                    </section>
                   </div>
                 ) : (
                   <div className="preview-empty">Не удалось подготовить предпросмотр Excel.</div>

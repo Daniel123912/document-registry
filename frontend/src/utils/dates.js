@@ -40,8 +40,11 @@ export function daysUntilTrashPurge(deletedAt, retentionDays = 30) {
     return retentionDays;
   }
   const deleted = new Date(deletedAt);
+  if (Number.isNaN(deleted.getTime())) {
+    return retentionDays;
+  }
   const purgeDate = new Date(deleted);
   purgeDate.setDate(purgeDate.getDate() + retentionDays);
   const daysLeft = Math.ceil((purgeDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  return Math.max(0, daysLeft);
+  return Number.isFinite(daysLeft) ? Math.max(0, daysLeft) : retentionDays;
 }

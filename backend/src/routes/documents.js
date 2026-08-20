@@ -60,7 +60,12 @@ router.get(
 
     res.setHeader("Content-Type", file.mimeType);
     res.setHeader("Content-Disposition", contentDisposition(file.originalFilename, "inline"));
-    res.sendFile(file.absolutePath);
+    res.sendFile(file.absolutePath, (error) => {
+      if (!error || res.headersSent) {
+        return;
+      }
+      res.status(404).json({ message: "Файл не найден." });
+    });
   })
 );
 

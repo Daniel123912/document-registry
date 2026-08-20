@@ -4,7 +4,7 @@ const { port, trashRetentionDays } = require("./config");
 const { initializeDatabase } = require("./db");
 const { seedDefaultUsers } = require("./seed/users");
 const { errorHandler } = require("./middleware/errorHandler");
-const { purgeExpiredTrash } = require("./services/documents");
+const { migrateMissingDocumentNumbers, purgeExpiredTrash } = require("./services/documents");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const documentRoutes = require("./routes/documents");
@@ -34,6 +34,11 @@ app.use(errorHandler);
 initializeDatabase()
   .then(() => seedDefaultUsers())
   .then(async () => {
+    const numbered = await migrateMissingDocumentNumbers();
+    if (numbered > 0) {
+      console.log(`Documents: assigned numbers to ${numbered} existing document(s).`);
+    }
+
     const purged = await purgeExpiredTrash(trashRetentionDays);
     if (purged > 0) {
       console.log(`Trash: permanently removed ${purged} expired document(s).`);

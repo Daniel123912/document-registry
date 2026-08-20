@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./styles/app.css";
 import {
   acknowledgeDocument,
@@ -41,12 +41,23 @@ const emptyVersionForm = {
   versionFile: null,
 };
 
-function App() {
-  const [token, setToken] = useState(localStorage.getItem("bakorToken") || "");
-  const [user, setUser] = useState(() => {
+function readStoredUser() {
+  try {
     const raw = localStorage.getItem("bakorUser");
     return raw ? JSON.parse(raw) : null;
-  });
+  } catch {
+    localStorage.removeItem("bakorUser");
+    return null;
+  }
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function App() {
+  const [token, setToken] = useState(localStorage.getItem("bakorToken") || "");
+  const [user, setUser] = useState(() => readStoredUser());
   const [authForm, setAuthForm] = useState({
     email: "responsible@bakor.local",
     password: "admin1234",
@@ -69,8 +80,9 @@ function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const overlayOpenedAt = useRef(0);
   const isResponsible = user?.role === "responsible";
-  const employeeUsers = users.filter((candidate) => candidate.role === "employee");
+  const employeeUsers = asArray(users).filter((candidate) => candidate.role === "employee");
 
   const selectedDocument = useMemo(
     () =>
@@ -179,11 +191,11 @@ function App() {
       const [documentsData, assignedData, reportData = [], usersData = [], trashData = []] =
         await Promise.all(requests);
 
-      setDocuments((documentsData || []).map(withReadableFilenames));
-      setAssignedDocuments((assignedData || []).map(withReadableFilenames));
-      setReportRows(reportData);
-      setUsers(usersData);
-      setTrashDocuments((trashData || []).map(withReadableFilenames));
+      setDocuments(asArray(documentsData).map(withReadableFilenames));
+      setAssignedDocuments(asArray(assignedData).map(withReadableFilenames));
+      setReportRows(asArray(reportData));
+      setUsers(asArray(usersData));
+      setTrashDocuments(asArray(trashData).map(withReadableFilenames));
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -494,7 +506,10 @@ function App() {
               setSearch("");
               setSort("new");
             }}
-            onSelect={setSelectedDocumentId}
+            onSelect={(documentId) => {
+              overlayOpenedAt.current = Date.now();
+              setSelectedDocumentId(documentId);
+            }}
           />
         )}
       </main>
@@ -511,7 +526,15 @@ function App() {
       ) : null}
 
       {selectedDocument ? (
-        <div className="overlay" onClick={() => setSelectedDocumentId(null)}>
+        <div
+          className="overlay"
+          onClick={() => {
+            if (Date.now() - overlayOpenedAt.current < 400) {
+              return;
+            }
+            setSelectedDocumentId(null);
+          }}
+        >
           <div className="doc-modal" onClick={(event) => event.stopPropagation()}>
             <DocumentPage
               document={selectedDocument}

@@ -597,6 +597,9 @@ a {
   display: grid;
   gap: 18px;
   align-content: start;
+  overflow: auto;
+  max-height: 100%;
+  padding-right: 4px;
 }
 
 .doc-preview-main {
@@ -639,6 +642,15 @@ a {
   cursor: pointer;
   margin-bottom: 6px;
   font-weight: 600;
+  display: grid;
+  gap: 4px;
+}
+
+.version-chip small {
+  font-weight: 500;
+  font-size: 12px;
+  color: #6b7786;
+  line-height: 1.35;
 }
 
 .version-chip.active {
@@ -681,6 +693,7 @@ a {
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
 .preview-filename {
@@ -689,8 +702,42 @@ a {
   font-size: 13px;
 }
 
+.preview-filesize {
+  color: #8b97a6;
+  font-size: 12px;
+}
+
+.preview-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f6fa;
+  border-radius: 999px;
+  padding: 4px 6px;
+}
+
+.preview-zoom button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: #314354;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.preview-zoom span {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #314354;
+}
+
 .preview-stage {
-  min-height: 0;
+  min-height: 420px;
   flex: 1;
   height: 100%;
   border: 1px solid #e6edf4;
@@ -698,6 +745,32 @@ a {
   background: #f7f9fc;
   overflow: auto;
   display: grid;
+  position: relative;
+}
+
+.preview-stage:fullscreen,
+.preview-stage.is-fullscreen {
+  border-radius: 0;
+  background: #edf2f7;
+}
+
+.preview-stage-embed,
+.preview-stage-sheet {
+  overflow: hidden;
+}
+
+.preview-stage-embed {
+  position: relative;
+}
+
+.preview-stage-image {
+  overflow: auto;
+}
+
+.preview-stage-docx .preview-docx,
+.preview-stage-sheet .preview-sheet-list {
+  min-height: 0;
+  height: 100%;
 }
 
 .preview-stage img,
@@ -706,6 +779,31 @@ a {
   min-height: 420px;
   border: 0;
   background: #fff;
+}
+
+.preview-stage-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.preview-stage-image {
+  place-items: center;
+  background: #e8eef5;
+}
+
+.preview-stage-image img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: transparent;
+  transform: scale(var(--preview-scale, 1));
+  transform-origin: center center;
 }
 
 .preview-docx,
@@ -729,10 +827,16 @@ a {
   box-shadow: 0 10px 28px rgba(43, 58, 74, 0.12);
   color: #23313f;
   line-height: 1.6;
+  zoom: var(--preview-scale, 1);
 }
 
 .preview-docx-page :is(p, ul, ol, table) {
   margin-top: 0;
+}
+
+.preview-docx-page img {
+  max-width: 100%;
+  height: auto;
 }
 
 .preview-docx-page table {
@@ -749,13 +853,44 @@ a {
 .preview-sheet-list {
   padding: 16px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.preview-sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-sheet-tab {
+  border: 1px solid #d5dde6;
+  background: #fff;
+  color: #3a4b5c;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.preview-sheet-tab.active {
+  background: #d7e6f4;
+  border-color: #c5d6e6;
+  color: #314354;
 }
 
 .preview-sheet {
   border: 1px solid #e6edf4;
   border-radius: 10px;
-  overflow: auto;
+  overflow: hidden;
+  background: #fff;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .preview-sheet h3 {
@@ -767,9 +902,38 @@ a {
   color: #314354;
 }
 
+.preview-sheet-frame {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  zoom: var(--preview-scale, 1);
+}
+
 .preview-sheet table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
+}
+
+.preview-sheet th,
+.preview-sheet tr:first-child td {
+  position: sticky;
+  top: 0;
+  background: #f8fbfe;
+  z-index: 1;
+}
+
+.preview-sheet td:first-child {
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.preview-sheet tr:first-child td:first-child,
+.preview-sheet th:first-child {
+  z-index: 2;
+  background: #f8fbfe;
 }
 
 .preview-sheet :is(th, td) {
@@ -777,11 +941,34 @@ a {
   padding: 6px 8px;
   font-size: 13px;
   text-align: left;
+  white-space: nowrap;
 }
 
 .preview-empty {
   color: var(--muted);
   padding: 40px 16px;
+}
+
+.preview-loading {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+}
+
+.preview-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #d5dde6;
+  border-top-color: #3a7ca5;
+  border-radius: 50%;
+  animation: preview-spin 0.7s linear infinite;
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .preview-open {

@@ -149,10 +149,15 @@ export async function fetchDocumentFile(token, documentId, versionNo) {
   }
 
   const blob = await response.blob();
+  const headerType = (response.headers.get("content-type") || "").split(";")[0].trim();
+  const mimeType = headerType || blob.type || "application/octet-stream";
+  const typedBlob = blob.type === mimeType ? blob : new Blob([blob], { type: mimeType });
+
   return {
-    blob,
-    objectUrl: URL.createObjectURL(blob),
-    mimeType: response.headers.get("content-type") || blob.type,
+    blob: typedBlob,
+    objectUrl: URL.createObjectURL(typedBlob),
+    mimeType,
+    size: typedBlob.size,
   };
 }
 

@@ -158,12 +158,47 @@ async function getDocumentOrThrow(documentId, { allowDeleted = false } = {}) {
   return document;
 }
 
+const DOCUMENT_NUMBER_PREFIXES = {
+  order: "ПР",
+  regulation: "РГ",
+  instruction: "ИН",
+  new_goods: "НТ",
+  other: "ДР",
+};
+
+function normalizeDocumentNumber(value) {
+  return String(value || "").trim();
+}
+
+async function generateDocumentNumber(client, type) {
+  const prefix = DOCUMENT_NUMBER_PREFIXES[type] || "ДК";
+  const existingNumbers = await client.query("SELECT number FROM documents WHERE type = $1", [type]);
+
+  let maxNumber = 0;
+  for (const row of existingNumbers.rows) {
+    const value = normalizeDocumentNumber(row.number).toUpperCase();
+    const match = value.match(new RegExp(`^${prefix}(\\d+)$`));
+    if (!match) {
+      continue;
+    }
+
+    const numericPart = Number(match[1]);
+    if (Number.isFinite(numericPart) && numericPart > maxNumber) {
+      maxNumber = numericPart;
+    }
+  }
+
+  return `${prefix}${String(maxNumber + 1).padStart(4, "0")}`;
+}
+
 async function createDocument({ parsed, assignedUsers, file, authorId }) {
   const originalName = decodeOriginalFilename(file.originalname);
   let documentId;
 
   try {
     return await withTransaction(async (client) => {
+      const documentNumber =
+        normalizeDocumentNumber(parsed.number) || (await generateDocumentNumber(client, parsed.type));
       const created = await client.query(
         `
           INSERT INTO documents (
@@ -177,7 +212,7 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
           parsed.title,
           parsed.description,
           parsed.type,
-          parsed.number,
+          documentNumber,
           parsed.documentDate,
           parsed.dueDate,
           authorId,
@@ -328,12 +363,20 @@ async function updateRequisites({ documentId, parsed }) {
 
   await withTransaction(async (client) => {
     const existing = await client.query(
-      "SELECT id FROM documents WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT id, type, number FROM documents WHERE id = $1 AND deleted_at IS NULL",
       [documentId]
     );
     if (!existing.rows.length) {
       throw new Error("Документ не найден.");
     }
+
+    const currentDocument = existing.rows[0];
+    const manualNumber = normalizeDocumentNumber(parsed.number);
+    const documentNumber =
+      manualNumber ||
+      (normalizeDocumentNumber(currentDocument.number) && currentDocument.type === parsed.type
+        ? normalizeDocumentNumber(currentDocument.number)
+        : await generateDocumentNumber(client, parsed.type));
 
     await client.query(
       `
@@ -346,7 +389,7 @@ async function updateRequisites({ documentId, parsed }) {
             updated_at = NOW()
         WHERE id = $1
       `,
-      [documentId, parsed.title, parsed.type, parsed.number, documentDate, parsed.description]
+      [documentId, parsed.title, parsed.type, documentNumber, documentDate, parsed.description]
     );
 
     await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
@@ -360,6 +403,31 @@ async function updateRequisites({ documentId, parsed }) {
         [documentId, userId]
       );
     }
+  });
+}
+
+async function migrateMissingDocumentNumbers() {
+  return withTransaction(async (client) => {
+    const missingNumbers = await client.query(
+      `
+        SELECT id, type
+        FROM documents
+        WHERE TRIM(COALESCE(number, '')) = ''
+        ORDER BY created_at ASC, id ASC
+      `
+    );
+
+    let updated = 0;
+    for (const row of missingNumbers.rows) {
+      const documentNumber = await generateDocumentNumber(client, row.type);
+      await client.query("UPDATE documents SET number = $2, updated_at = NOW() WHERE id = $1", [
+        row.id,
+        documentNumber,
+      ]);
+      updated += 1;
+    }
+
+    return updated;
   });
 }
 
@@ -587,6 +655,7 @@ module.exports = {
   publishDocument,
   createVersion,
   updateRequisites,
+  migrateMissingDocumentNumbers,
   archiveDocument,
   removeDocument,
   restoreDocument,

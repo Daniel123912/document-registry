@@ -83,7 +83,9 @@ function fileApiPath(documentId, versionNo) {
 }
 
 function contentDisposition(filename, type = "inline") {
-  const fallback = String(filename || "document").replace(/[^\x20-\x7E]/g, "_");
+  const fallback = String(filename || "document")
+    .replace(/[^\x20-\x7E]/g, "_")
+    .replace(/["\\]/g, "_");
   const encoded = encodeURIComponent(filename || "document");
   return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
