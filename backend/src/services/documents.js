@@ -84,63 +84,93 @@ async function listDocuments({ userId, role, onlyAssigned, trash = false }) {
   `;
 
   const result = await query(sql, params);
-  const documents = [];
-
-  for (const row of result.rows) {
-    const [versionsResult, usersResult] = await Promise.all([
-      query(
-        `
-          SELECT dv.version_no, dv.change_reason, dv.created_at, dv.original_filename, dv.file_path, dv.mime_type, u.full_name AS created_by_name
-          FROM document_versions dv
-          JOIN users u ON u.id = dv.created_by
-          WHERE dv.document_id = $1
-          ORDER BY dv.version_no DESC
-        `,
-        [row.id]
-      ),
-      query(
-        `
-          SELECT u.id, u.full_name, u.email,
-            EXISTS (
-              SELECT 1
-              FROM document_acknowledgements ack
-              WHERE ack.document_id = da.document_id
-                AND ack.user_id = u.id
-                AND ack.version_no = $2
-            ) AS is_acknowledged
-          FROM document_assignments da
-          JOIN users u ON u.id = da.user_id
-          WHERE da.document_id = $1
-          ORDER BY u.full_name ASC
-        `,
-        [row.id, Number(row.active_version_no || 0)]
-      ),
-    ]);
-
-    documents.push(
-      normalizeDocument({
-        ...row,
-        current_file_url: row.current_file_path ? fileApiPath(row.id) : null,
-        versions: versionsResult.rows.map((version) => ({
-          versionNo: Number(version.version_no),
-          changeReason: version.change_reason,
-          createdAt: version.created_at,
-          originalFilename: version.original_filename,
-          createdByName: version.created_by_name,
-          mimeType: version.mime_type,
-          fileUrl: fileApiPath(row.id, Number(version.version_no)),
-        })),
-        assigned_users: usersResult.rows.map((user) => ({
-          id: Number(user.id),
-          fullName: user.full_name,
-          email: user.email,
-          isAcknowledged: Boolean(user.is_acknowledged),
-        })),
-      })
-    );
+  if (!result.rows.length) {
+    return [];
   }
 
-  return documents;
+  const documentIds = result.rows.map((row) => row.id);
+  const versionsByDocumentId = new Map();
+  const assignedUsersByDocumentId = new Map();
+
+  const [versionsResult, usersResult] = await Promise.all([
+    query(
+      `
+        SELECT
+          dv.document_id,
+          dv.version_no,
+          dv.change_reason,
+          dv.created_at,
+          dv.original_filename,
+          dv.file_path,
+          dv.mime_type,
+          u.full_name AS created_by_name
+        FROM document_versions dv
+        JOIN users u ON u.id = dv.created_by
+        WHERE dv.document_id = ANY($1::bigint[])
+        ORDER BY dv.document_id ASC, dv.version_no DESC
+      `,
+      [documentIds]
+    ),
+    query(
+      `
+        SELECT
+          da.document_id,
+          u.id,
+          u.full_name,
+          u.email,
+          EXISTS (
+            SELECT 1
+            FROM document_acknowledgements ack
+            WHERE ack.document_id = da.document_id
+              AND ack.user_id = u.id
+              AND ack.version_no = d.active_version_no
+          ) AS is_acknowledged
+        FROM document_assignments da
+        JOIN documents d ON d.id = da.document_id
+        JOIN users u ON u.id = da.user_id
+        WHERE da.document_id = ANY($1::bigint[])
+        ORDER BY da.document_id ASC, u.full_name ASC
+      `,
+      [documentIds]
+    ),
+  ]);
+
+  for (const version of versionsResult.rows) {
+    const documentId = Number(version.document_id);
+    const versions = versionsByDocumentId.get(documentId) || [];
+    versions.push({
+      versionNo: Number(version.version_no),
+      changeReason: version.change_reason,
+      createdAt: version.created_at,
+      originalFilename: version.original_filename,
+      createdByName: version.created_by_name,
+      mimeType: version.mime_type,
+      fileUrl: fileApiPath(documentId, Number(version.version_no)),
+    });
+    versionsByDocumentId.set(documentId, versions);
+  }
+
+  for (const user of usersResult.rows) {
+    const documentId = Number(user.document_id);
+    const assignedUsers = assignedUsersByDocumentId.get(documentId) || [];
+    assignedUsers.push({
+      id: Number(user.id),
+      fullName: user.full_name,
+      email: user.email,
+      isAcknowledged: Boolean(user.is_acknowledged),
+    });
+    assignedUsersByDocumentId.set(documentId, assignedUsers);
+  }
+
+  return result.rows.map((row) => {
+    const documentId = Number(row.id);
+    return normalizeDocument({
+      ...row,
+      current_file_url: row.current_file_path ? fileApiPath(row.id) : null,
+      versions: versionsByDocumentId.get(documentId) || [],
+      assigned_users: assignedUsersByDocumentId.get(documentId) || [],
+    });
+  });
 }
 
 async function getDocumentOrThrow(documentId, { allowDeleted = false } = {}) {
@@ -318,6 +348,14 @@ async function publishDocument({ documentId, userId }) {
       throw new Error("Документ не найден.");
     }
 
+    if (document.status === "archived") {
+      throw httpError(409, "Документ в архиве. Сначала верните его из архива.");
+    }
+
+    if (document.status !== "draft") {
+      throw httpError(409, "Опубликовать можно только черновик.");
+    }
+
     const hasVersion = Number(document.active_version_no || 0) > 0;
     if (!hasVersion) {
       await client.query(
@@ -357,13 +395,21 @@ async function createVersion({ documentId, changeReason, file, userId }) {
   try {
     await withTransaction(async (client) => {
       const currentVersionResult = await client.query(
-        "SELECT id, active_version_no FROM documents WHERE id = $1 AND deleted_at IS NULL",
+        "SELECT id, status, active_version_no FROM documents WHERE id = $1 AND deleted_at IS NULL",
         [documentId]
       );
       const document = currentVersionResult.rows[0];
 
       if (!document) {
         throw new Error("Документ не найден.");
+      }
+
+      if (document.status === "archived") {
+        throw httpError(409, "Нельзя добавить версию к документу в архиве.");
+      }
+
+      if (document.status !== "published") {
+        throw httpError(409, "Новую версию можно добавить только к опубликованному документу.");
       }
 
       const currentVersionNo = Number(document.active_version_no || 0) + 1;
@@ -494,18 +540,50 @@ async function migrateMissingDocumentNumbers() {
 }
 
 async function archiveDocument(documentId) {
-  const result = await query(
+  const existing = await query(
+    "SELECT id, status FROM documents WHERE id = $1 AND deleted_at IS NULL",
+    [documentId]
+  );
+  if (!existing.rows.length) {
+    throw new Error("Документ не найден.");
+  }
+  if (existing.rows[0].status === "archived") {
+    throw httpError(409, "Документ уже в архиве.");
+  }
+  if (existing.rows[0].status !== "published") {
+    throw httpError(409, "В архив можно отправить только опубликованный документ.");
+  }
+
+  await query(
     `
       UPDATE documents
       SET status = 'archived', updated_at = NOW()
       WHERE id = $1 AND deleted_at IS NULL
-      RETURNING id
     `,
     [documentId]
   );
-  if (!result.rows.length) {
+}
+
+async function unarchiveDocument(documentId) {
+  const existing = await query(
+    "SELECT id, status FROM documents WHERE id = $1 AND deleted_at IS NULL",
+    [documentId]
+  );
+  if (!existing.rows.length) {
     throw new Error("Документ не найден.");
   }
+  if (existing.rows[0].status !== "archived") {
+    throw httpError(409, "Документ не находится в архиве.");
+  }
+
+  await query(
+    `
+      UPDATE documents
+      SET status = 'published', updated_at = NOW()
+      WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [documentId]
+  );
 }
 
 async function removeDocument(documentId, userId) {
@@ -525,7 +603,7 @@ async function removeDocument(documentId, userId) {
       throw new Error("Документ не найден.");
     }
     if (existing.rows[0].deleted_at) {
-      throw new Error("Документ уже в корзине.");
+      throw httpError(409, "Документ уже в корзине.");
     }
     throw new Error("Документ не найден.");
   }
@@ -543,7 +621,7 @@ async function restoreDocument(documentId) {
   );
 
   if (!result.rows.length) {
-    throw new Error("Документ не найден в корзине.");
+    throw httpError(404, "Документ не найден в корзине.");
   }
 }
 
@@ -555,7 +633,7 @@ async function permanentlyDeleteDocument(documentId) {
   const document = documentResult.rows[0];
 
   if (!document) {
-    throw new Error("Документ не найден в корзине.");
+    throw httpError(404, "Документ не найден в корзине.");
   }
 
   const versionsResult = await query(
@@ -719,6 +797,7 @@ module.exports = {
   updateRequisites,
   migrateMissingDocumentNumbers,
   archiveDocument,
+  unarchiveDocument,
   removeDocument,
   restoreDocument,
   permanentlyDeleteDocument,

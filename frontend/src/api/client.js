@@ -104,6 +104,13 @@ export async function archiveDocument(token, documentId) {
   });
 }
 
+export async function unarchiveDocument(token, documentId) {
+  return request(`/documents/${documentId}/unarchive`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 export async function deleteDocument(token, documentId) {
   return request(`/documents/${documentId}/delete`, {
     method: "POST",

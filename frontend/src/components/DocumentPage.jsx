@@ -138,6 +138,7 @@ export default function DocumentPage({
   onClose,
   onSaveRequisites,
   onArchive,
+  onUnarchive,
   onDelete,
   onRestore,
   onPermanentDelete,
@@ -246,6 +247,12 @@ export default function DocumentPage({
   useEffect(() => {
     setPreviewVersionNo(document.activeVersionNo || 0);
   }, [document.activeVersionNo]);
+
+  useEffect(() => {
+    if (tab === "version" && document.status !== "published") {
+      setTab("preview");
+    }
+  }, [document.status, tab]);
 
   useEffect(() => {
     setPreviewScale(1);
@@ -456,7 +463,7 @@ export default function DocumentPage({
             Реквизиты
           </button>
         ) : null}
-        {isResponsible && !isTrash ? (
+        {isResponsible && !isTrash && document.status === "published" ? (
           <button className={tab === "version" ? "active" : ""} onClick={() => setTab("version")}>
             Новая версия
           </button>
@@ -669,6 +676,16 @@ export default function DocumentPage({
                   Опубликовать
                 </button>
               ) : null}
+              {!isTrash && isResponsible && document.status === "archived" ? (
+                <button
+                  className="btn primary"
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onUnarchive(document.id)}
+                >
+                  Вернуть из архива
+                </button>
+              ) : null}
               {!isTrash && !isResponsible && !document.isAcknowledged ? (
                 <button
                   className="btn primary"
@@ -799,9 +816,19 @@ export default function DocumentPage({
           </div>
 
           <div className="modal-foot">
-            {document.status !== "archived" ? (
+            {document.status === "published" ? (
               <button className="btn cancel" type="button" onClick={() => onArchive(document.id)}>
                 В архив
+              </button>
+            ) : null}
+            {document.status === "archived" ? (
+              <button
+                className="btn primary"
+                type="button"
+                disabled={loading}
+                onClick={() => onUnarchive(document.id)}
+              >
+                Вернуть из архива
               </button>
             ) : null}
             <button className="btn danger-text" type="button" onClick={() => onDelete(document.id)}>
@@ -831,7 +858,7 @@ export default function DocumentPage({
         </form>
       ) : null}
 
-      {tab === "version" && isResponsible && !isTrash ? (
+      {tab === "version" && isResponsible && !isTrash && document.status === "published" ? (
         <form className="doc-form" onSubmit={handleNewVersion}>
           <label className="form-field">
             Причина новой версии

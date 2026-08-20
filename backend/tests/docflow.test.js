@@ -314,3 +314,102 @@ test("acknowledgement report counts only currently assigned users", async () => 
 
   await db.end();
 });
+
+test("acknowledgement report includes only published documents", async () => {
+  const db = await createDatabase();
+
+  const responsible = (
+    await db.query(
+      `
+        INSERT INTO users (full_name, email, password_hash, role)
+        VALUES ('Иван Петров', 'responsible@bakor.local', 'hash', 'responsible')
+        RETURNING id
+      `
+    )
+  ).rows[0];
+
+  await db.query(
+    `
+      INSERT INTO documents (
+        title, description, type, number, document_date, due_date, status, author_id, active_version_no
+      )
+      VALUES
+        ('Черновик', '', 'order', 'ПР0001', '2026-03-13', '2026-03-20', 'draft', $1, 0),
+        ('Опубликован', '', 'order', 'ПР0002', '2026-03-13', '2026-03-20', 'published', $1, 1),
+        ('Архив', '', 'order', 'ПР0003', '2026-03-13', '2026-03-20', 'archived', $1, 1)
+    `,
+    [responsible.id]
+  );
+
+  const rows = (
+    await db.query(
+      `
+        SELECT d.id, d.title, d.status
+        FROM documents d
+        WHERE d.deleted_at IS NULL
+          AND d.status = 'published'
+        ORDER BY d.created_at DESC
+      `
+    )
+  ).rows;
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, "Опубликован");
+  assert.equal(rows[0].status, "published");
+
+  await db.end();
+});
+
+test("archived document can be returned to published", async () => {
+  const db = await createDatabase();
+
+  const responsible = (
+    await db.query(
+      `
+        INSERT INTO users (full_name, email, password_hash, role)
+        VALUES ('Иван Петров', 'responsible@bakor.local', 'hash', 'responsible')
+        RETURNING id
+      `
+    )
+  ).rows[0];
+
+  const document = (
+    await db.query(
+      `
+        INSERT INTO documents (
+          title, description, type, number, document_date, due_date, status, author_id, active_version_no
+        )
+        VALUES (
+          'Архивный приказ',
+          '',
+          'order',
+          'ПР0099',
+          '2026-03-13',
+          '2026-03-20',
+          'archived',
+          $1,
+          1
+        )
+        RETURNING id
+      `,
+      [responsible.id]
+    )
+  ).rows[0];
+
+  await db.query(
+    `
+      UPDATE documents
+      SET status = 'published', updated_at = NOW()
+      WHERE id = $1 AND status = 'archived'
+    `,
+    [document.id]
+  );
+
+  const restored = (
+    await db.query("SELECT status FROM documents WHERE id = $1", [document.id])
+  ).rows[0];
+
+  assert.equal(restored.status, "published");
+
+  await db.end();
+});

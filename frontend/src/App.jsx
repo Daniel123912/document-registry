@@ -15,6 +15,7 @@ import {
   permanentDeleteDocument,
   publishDocument,
   restoreDocument,
+  unarchiveDocument,
   updateDocument,
 } from "./api/client";
 import { withReadableFilenames } from "./utils/filenames";
@@ -382,6 +383,21 @@ function App() {
     }
   }
 
+  async function handleUnarchive(documentId) {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await unarchiveDocument(token, documentId);
+      setNotice(result.message);
+      setSection("active");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleDelete(documentId) {
     if (
       !window.confirm(
@@ -546,6 +562,7 @@ function App() {
               onClose={() => setSelectedDocumentId(null)}
               onSaveRequisites={handleSaveRequisites}
               onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
               onDelete={handleDelete}
               onRestore={handleRestore}
               onPermanentDelete={handlePermanentDelete}

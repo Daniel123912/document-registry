@@ -181,6 +181,16 @@ router.post(
   })
 );
 
+router.post(
+  "/:id/unarchive",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(async (req, res) => {
+    await documents.unarchiveDocument(Number(req.params.id));
+    res.json({ message: "Документ возвращен из архива." });
+  })
+);
+
 router.delete("/:id", requireAuth, requireResponsible, asyncHandler(removeDocument));
 router.post("/:id/delete", requireAuth, requireResponsible, asyncHandler(removeDocument));
 

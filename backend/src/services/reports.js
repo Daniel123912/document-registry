@@ -15,6 +15,7 @@ async function listAcknowledgementReport() {
       AND ack.version_no = d.active_version_no
       AND ack.user_id = da.user_id
     WHERE d.deleted_at IS NULL
+      AND d.status = 'published'
     GROUP BY d.id
     ORDER BY d.created_at DESC
   `);
