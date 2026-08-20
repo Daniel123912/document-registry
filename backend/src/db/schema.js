@@ -80,6 +80,11 @@ const schemaStatements = [
     CREATE INDEX IF NOT EXISTS idx_document_acks_document_version
       ON document_acknowledgements(document_id, version_no);
   `,
+  `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_type_number_unique
+      ON documents(type, number)
+      WHERE COALESCE(number, '') <> ''
+  `,
 ];
 
 module.exports = {

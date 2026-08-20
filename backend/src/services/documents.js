@@ -170,6 +170,33 @@ function normalizeDocumentNumber(value) {
   return String(value || "").trim();
 }
 
+function isUniqueViolation(error) {
+  return error?.code === "23505";
+}
+
+async function assertDocumentNumberAvailable(client, { type, number, excludeDocumentId = null }) {
+  const normalizedNumber = normalizeDocumentNumber(number);
+  if (!normalizedNumber) {
+    return;
+  }
+
+  const result = await client.query(
+    `
+      SELECT id
+      FROM documents
+      WHERE type = $1
+        AND number = $2
+        AND ($3::bigint IS NULL OR id <> $3)
+      LIMIT 1
+    `,
+    [type, normalizedNumber, excludeDocumentId]
+  );
+
+  if (result.rows.length) {
+    throw httpError(409, "Документ с таким номером уже существует.");
+  }
+}
+
 async function generateDocumentNumber(client, type) {
   const prefix = DOCUMENT_NUMBER_PREFIXES[type] || "ДК";
   const existingNumbers = await client.query("SELECT number FROM documents WHERE type = $1", [type]);
@@ -194,60 +221,82 @@ async function generateDocumentNumber(client, type) {
 async function createDocument({ parsed, assignedUsers, file, authorId }) {
   const originalName = decodeOriginalFilename(file.originalname);
   let documentId;
+  const manualNumber = normalizeDocumentNumber(parsed.number);
 
   try {
-    return await withTransaction(async (client) => {
-      const documentNumber =
-        normalizeDocumentNumber(parsed.number) || (await generateDocumentNumber(client, parsed.type));
-      const created = await client.query(
-        `
-          INSERT INTO documents (
-            title, description, type, number, document_date, due_date, status, author_id,
-            draft_original_filename, draft_mime_type
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9)
-          RETURNING *
-        `,
-        [
-          parsed.title,
-          parsed.description,
-          parsed.type,
-          documentNumber,
-          parsed.documentDate,
-          parsed.dueDate,
-          authorId,
-          originalName,
-          file.mimetype,
-        ]
-      );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await withTransaction(async (client) => {
+          if (manualNumber) {
+            await assertDocumentNumberAvailable(client, {
+              type: parsed.type,
+              number: manualNumber,
+            });
+          }
 
-      const documentRow = created.rows[0];
-      documentId = documentRow.id;
-      const relativePath = await placeUploadedFile({
-        documentId: documentRow.id,
-        uploadedPath: file.path,
-        originalName,
-        slot: "draft",
-      });
+          const documentNumber = manualNumber || (await generateDocumentNumber(client, parsed.type));
+          const created = await client.query(
+            `
+              INSERT INTO documents (
+                title, description, type, number, document_date, due_date, status, author_id,
+                draft_original_filename, draft_mime_type
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9)
+              RETURNING *
+            `,
+            [
+              parsed.title,
+              parsed.description,
+              parsed.type,
+              documentNumber,
+              parsed.documentDate,
+              parsed.dueDate,
+              authorId,
+              originalName,
+              file.mimetype,
+            ]
+          );
 
-      await client.query(
-        "UPDATE documents SET draft_file_path = $2 WHERE id = $1",
-        [documentRow.id, relativePath]
-      );
+          const documentRow = created.rows[0];
+          documentId = documentRow.id;
+          const relativePath = await placeUploadedFile({
+            documentId: documentRow.id,
+            uploadedPath: file.path,
+            originalName,
+            slot: "draft",
+          });
 
-      for (const userId of assignedUsers) {
-        await client.query(
-          `
-            INSERT INTO document_assignments (document_id, user_id)
-            VALUES ($1, $2)
-            ON CONFLICT (document_id, user_id) DO NOTHING
-          `,
-          [documentRow.id, userId]
-        );
+          await client.query(
+            "UPDATE documents SET draft_file_path = $2 WHERE id = $1",
+            [documentRow.id, relativePath]
+          );
+
+          for (const userId of assignedUsers) {
+            await client.query(
+              `
+                INSERT INTO document_assignments (document_id, user_id)
+                VALUES ($1, $2)
+                ON CONFLICT (document_id, user_id) DO NOTHING
+              `,
+              [documentRow.id, userId]
+            );
+          }
+
+          return { ...documentRow, draft_file_path: relativePath };
+        });
+      } catch (error) {
+        if (manualNumber && isUniqueViolation(error)) {
+          throw httpError(409, "Документ с таким номером уже существует.");
+        }
+        if (!manualNumber && isUniqueViolation(error) && attempt < 2) {
+          documentId = null;
+          continue;
+        }
+        throw error;
       }
+    }
 
-      return { ...documentRow, draft_file_path: relativePath };
-    });
+    throw httpError(409, "Не удалось подобрать уникальный номер документа.");
   } catch (error) {
     await removeIfExists(file.path);
     if (documentId) {
@@ -361,49 +410,62 @@ async function createVersion({ documentId, changeReason, file, userId }) {
 async function updateRequisites({ documentId, parsed }) {
   const documentDate = String(parsed.documentDate).slice(0, 10);
 
-  await withTransaction(async (client) => {
-    const existing = await client.query(
-      "SELECT id, type, number FROM documents WHERE id = $1 AND deleted_at IS NULL",
-      [documentId]
-    );
-    if (!existing.rows.length) {
-      throw new Error("Документ не найден.");
-    }
+  try {
+    await withTransaction(async (client) => {
+      const existing = await client.query(
+        "SELECT id, type, number FROM documents WHERE id = $1 AND deleted_at IS NULL",
+        [documentId]
+      );
+      if (!existing.rows.length) {
+        throw new Error("Документ не найден.");
+      }
 
-    const currentDocument = existing.rows[0];
-    const manualNumber = normalizeDocumentNumber(parsed.number);
-    const documentNumber =
-      manualNumber ||
-      (normalizeDocumentNumber(currentDocument.number) && currentDocument.type === parsed.type
-        ? normalizeDocumentNumber(currentDocument.number)
-        : await generateDocumentNumber(client, parsed.type));
+      const currentDocument = existing.rows[0];
+      const manualNumber = normalizeDocumentNumber(parsed.number);
+      const documentNumber =
+        manualNumber ||
+        (normalizeDocumentNumber(currentDocument.number) && currentDocument.type === parsed.type
+          ? normalizeDocumentNumber(currentDocument.number)
+          : await generateDocumentNumber(client, parsed.type));
 
-    await client.query(
-      `
-        UPDATE documents
-        SET title = $2,
-            type = $3,
-            number = $4,
-            document_date = $5,
-            description = $6,
-            updated_at = NOW()
-        WHERE id = $1
-      `,
-      [documentId, parsed.title, parsed.type, documentNumber, documentDate, parsed.description]
-    );
+      await assertDocumentNumberAvailable(client, {
+        type: parsed.type,
+        number: documentNumber,
+        excludeDocumentId: documentId,
+      });
 
-    await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
-    for (const userId of parsed.assignedUsers) {
       await client.query(
         `
-          INSERT INTO document_assignments (document_id, user_id)
-          VALUES ($1, $2)
-          ON CONFLICT (document_id, user_id) DO NOTHING
+          UPDATE documents
+          SET title = $2,
+              type = $3,
+              number = $4,
+              document_date = $5,
+              description = $6,
+              updated_at = NOW()
+          WHERE id = $1
         `,
-        [documentId, userId]
+        [documentId, parsed.title, parsed.type, documentNumber, documentDate, parsed.description]
       );
+
+      await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);
+      for (const userId of parsed.assignedUsers) {
+        await client.query(
+          `
+            INSERT INTO document_assignments (document_id, user_id)
+            VALUES ($1, $2)
+            ON CONFLICT (document_id, user_id) DO NOTHING
+          `,
+          [documentId, userId]
+        );
+      }
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw httpError(409, "Документ с таким номером уже существует.");
     }
-  });
+    throw error;
+  }
 }
 
 async function migrateMissingDocumentNumbers() {

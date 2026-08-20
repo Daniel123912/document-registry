@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import DOMPurify from "dompurify";
 import { fetchDocumentFile } from "../api/client";
 import { TYPE_OPTIONS, typeLabel } from "../constants";
 import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
@@ -70,6 +71,14 @@ function extractHtmlTable(html) {
   return match ? match[0] : "";
 }
 
+function sanitizePreviewHtml(html) {
+  return DOMPurify.sanitize(String(html || ""), {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["form", "input", "button", "script", "style", "svg", "math"],
+    FORBID_ATTR: ["id", "name"],
+  });
+}
+
 function previewFilename(document, previewVersionNo) {
   const versions = document.versions || [];
   const selected = versions.find((version) => version.versionNo === previewVersionNo);
@@ -104,7 +113,9 @@ function sheetToPreviewHtml(sheet, xlsx) {
       };
     }
 
-    return xlsx.utils.sheet_to_html(previewSheet, { header: "", footer: "" });
+    return sanitizePreviewHtml(
+      xlsx.utils.sheet_to_html(previewSheet, { header: "", footer: "" })
+    );
   } catch {
     return "";
   }
@@ -309,7 +320,7 @@ export default function DocumentPage({
                 }),
               }
             );
-            nextPreview.docHtml = rendered.value;
+            nextPreview.docHtml = sanitizePreviewHtml(rendered.value);
           } catch {
             nextPreview.docHtml = "";
           }
@@ -319,7 +330,7 @@ export default function DocumentPage({
           try {
             if (await blobLooksLikeHtml(result.blob)) {
               const html = await result.blob.text();
-              nextPreview.docHtml = extractHtmlTable(html);
+              nextPreview.docHtml = sanitizePreviewHtml(extractHtmlTable(html));
             } else {
               const XLSX = await import("xlsx");
               const arrayBuffer = await result.blob.arrayBuffer();
