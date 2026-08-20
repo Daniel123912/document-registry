@@ -19,6 +19,7 @@ function normalizeDocument(row) {
     currentFileUrl: row.current_file_url || null,
     currentFilename: decodeOriginalFilename(row.current_filename),
     currentMimeType: row.current_mime_type || null,
+    folderId: row.folder_id == null ? null : Number(row.folder_id),
     updatedAt: row.updated_at || row.document_date,
     versions: Array.isArray(row.versions)
       ? row.versions.map((version) => ({

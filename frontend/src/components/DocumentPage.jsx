@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import { fetchDocumentFile } from "../api/client";
 import { TYPE_OPTIONS, typeLabel } from "../constants";
 import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
+import { flattenFoldersForSelect } from "../utils/folders";
 
 const emptyVersionForm = {
   changeReason: "",
@@ -131,6 +132,7 @@ function versionLabel(versionNo, activeVersionNo) {
 export default function DocumentPage({
   document,
   users,
+  folders = [],
   isResponsible,
   isTrash = false,
   loading,
@@ -162,6 +164,7 @@ export default function DocumentPage({
     documentDate: toIsoDateValue(document.documentDate),
     description: document.description || "",
     assignedUsers: (document.assignedUsers || []).map((user) => user.id),
+    folderId: document.folderId == null ? "" : String(document.folderId),
   });
   const [versionForm, setVersionForm] = useState(emptyVersionForm);
   const [filePreview, setFilePreview] = useState({
@@ -177,6 +180,7 @@ export default function DocumentPage({
   const employeeUsers = (Array.isArray(users) ? users : []).filter(
     (candidate) => candidate.role === "employee"
   );
+  const folderOptions = flattenFoldersForSelect(folders, editForm.type);
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
   const ackDone = document.acknowledgedCount || 0;
   const ackPercent = ackTotal ? Math.round((ackDone / ackTotal) * 100) : 0;
@@ -240,6 +244,7 @@ export default function DocumentPage({
       documentDate: toIsoDateValue(document.documentDate),
       description: document.description || "",
       assignedUsers: (document.assignedUsers || []).map((user) => user.id),
+      folderId: document.folderId == null ? "" : String(document.folderId),
     });
     setVersionForm(emptyVersionForm);
   }, [document.id]);
@@ -395,6 +400,7 @@ export default function DocumentPage({
       documentDate: toIsoDateValue(editForm.documentDate),
       description: editForm.description || "",
       assignedUsers: (editForm.assignedUsers || []).map(Number),
+      folderId: editForm.folderId ? Number(editForm.folderId) : null,
     });
   }
 
@@ -710,7 +716,11 @@ export default function DocumentPage({
                   className="field-select"
                   value={editForm.type}
                   onChange={(event) =>
-                    setEditForm((current) => ({ ...current, type: event.target.value }))
+                    setEditForm((current) => ({
+                      ...current,
+                      type: event.target.value,
+                      folderId: "",
+                    }))
                   }
                 >
                   {TYPE_OPTIONS.map((option) => (
@@ -731,6 +741,27 @@ export default function DocumentPage({
                 />
               </label>
             </div>
+
+            <label className="form-field">
+              Папка
+              <select
+                className="field-select"
+                value={editForm.folderId || ""}
+                onChange={(event) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    folderId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Без папки</option>
+                {folderOptions.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="form-field">
               Название документа
@@ -845,6 +876,7 @@ export default function DocumentPage({
                   documentDate: toIsoDateValue(document.documentDate),
                   description: document.description || "",
                   assignedUsers: (document.assignedUsers || []).map((user) => user.id),
+                  folderId: document.folderId == null ? "" : String(document.folderId),
                 });
                 setTab("preview");
               }}

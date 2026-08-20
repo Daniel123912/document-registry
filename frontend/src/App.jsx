@@ -4,10 +4,13 @@ import {
   acknowledgeDocument,
   archiveDocument,
   createDocument,
+  createFolder,
   createVersion,
   deleteDocument,
+  deleteFolder,
   fetchAssignedDocuments,
   fetchDocuments,
+  fetchFolders,
   fetchReport,
   fetchTrashDocuments,
   fetchUsers,
@@ -17,9 +20,11 @@ import {
   restoreDocument,
   unarchiveDocument,
   updateDocument,
+  updateFolder,
 } from "./api/client";
 import { withReadableFilenames } from "./utils/filenames";
 import { addDays, toIsoDate } from "./utils/dates";
+import { folderPathLabels } from "./utils/folders";
 import { typeLabel } from "./constants";
 import LoginPage from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
@@ -31,6 +36,7 @@ import DocumentPage from "./components/DocumentPage";
 const emptyCreateForm = {
   title: "",
   type: "order",
+  folderId: "",
   documentDate: toIsoDate(new Date()),
   description: "",
   assignedUsers: [],
@@ -65,11 +71,13 @@ function App() {
   });
   const [section, setSection] = useState("active");
   const [activeType, setActiveType] = useState("other");
+  const [activeFolderId, setActiveFolderId] = useState(null);
   const [activeOpen, setActiveOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [assignedDocuments, setAssignedDocuments] = useState([]);
   const [trashDocuments, setTrashDocuments] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [reportRows, setReportRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState(null);
@@ -106,8 +114,12 @@ function App() {
     if (section === "trash") {
       return "Корзина";
     }
+    const path = folderPathLabels(folders, activeFolderId);
+    if (path.length) {
+      return `Список документов: ${typeLabel(activeType)} / ${path.join(" / ")}`;
+    }
     return `Список документов: ${typeLabel(activeType)}`;
-  }, [activeType, section]);
+  }, [activeFolderId, activeType, folders, section]);
 
   const visibleDocuments = useMemo(() => {
     if (section === "trash") {
@@ -147,7 +159,13 @@ function App() {
       if (section === "inbox") {
         return true;
       }
-      return document.type === activeType;
+      if (document.type !== activeType) {
+        return false;
+      }
+      if (activeFolderId != null) {
+        return Number(document.folderId) === Number(activeFolderId);
+      }
+      return true;
     });
 
     const query = search.trim().toLowerCase();
@@ -169,7 +187,17 @@ function App() {
     });
 
     return rows;
-  }, [activeType, assignedDocuments, documents, isResponsible, search, section, sort, trashDocuments]);
+  }, [
+    activeFolderId,
+    activeType,
+    assignedDocuments,
+    documents,
+    isResponsible,
+    search,
+    section,
+    sort,
+    trashDocuments,
+  ]);
 
   async function loadData(currentToken = token, currentUser = user) {
     if (!currentToken || !currentUser) {
@@ -183,17 +211,25 @@ function App() {
       const requests = [
         fetchDocuments(currentToken, currentUser.role === "responsible" ? "all" : "mine"),
         fetchAssignedDocuments(currentToken),
+        fetchFolders(currentToken),
       ];
 
       if (currentUser.role === "responsible") {
         requests.push(fetchReport(currentToken), fetchUsers(currentToken), fetchTrashDocuments(currentToken));
       }
 
-      const [documentsData, assignedData, reportData = [], usersData = [], trashData = []] =
-        await Promise.all(requests);
+      const [
+        documentsData,
+        assignedData,
+        foldersData = [],
+        reportData = [],
+        usersData = [],
+        trashData = [],
+      ] = await Promise.all(requests);
 
       setDocuments(asArray(documentsData).map(withReadableFilenames));
       setAssignedDocuments(asArray(assignedData).map(withReadableFilenames));
+      setFolders(asArray(foldersData));
       setReportRows(asArray(reportData));
       setUsers(asArray(usersData));
       setTrashDocuments(asArray(trashData).map(withReadableFilenames));
@@ -265,8 +301,10 @@ function App() {
     setDocuments([]);
     setAssignedDocuments([]);
     setTrashDocuments([]);
+    setFolders([]);
     setReportRows([]);
     setUsers([]);
+    setActiveFolderId(null);
     setNotice("");
     setError("");
   }
@@ -275,6 +313,7 @@ function App() {
     setCreateForm({
       ...emptyCreateForm,
       type: section === "active" ? activeType : "order",
+      folderId: section === "active" && activeFolderId != null ? String(activeFolderId) : "",
       documentDate: toIsoDate(new Date()),
     });
     setCreateOpen(true);
@@ -294,6 +333,9 @@ function App() {
       formData.append("dueDate", addDays(createForm.documentDate, 14));
       formData.append("description", createForm.description);
       formData.append("assignedUsers", JSON.stringify(createForm.assignedUsers));
+      if (createForm.folderId) {
+        formData.append("folderId", createForm.folderId);
+      }
       if (createForm.docFile) {
         formData.append("docFile", createForm.docFile);
       }
@@ -304,6 +346,7 @@ function App() {
       setNotice(result.message);
       setSection("active");
       setActiveType(createForm.type);
+      setActiveFolderId(createForm.folderId ? Number(createForm.folderId) : null);
       setActiveOpen(true);
       setSelectedDocumentId(result.id || null);
       await loadData();
@@ -472,8 +515,98 @@ function App() {
   function selectType(type) {
     setSection("active");
     setActiveType(type);
+    setActiveFolderId(null);
     setActiveOpen(true);
     setSelectedDocumentId(null);
+  }
+
+  function selectFolder(type, folderId) {
+    setSection("active");
+    setActiveType(type);
+    setActiveFolderId(folderId);
+    setActiveOpen(true);
+    setSelectedDocumentId(null);
+  }
+
+  async function handleCreateFolder(type, parentId) {
+    const name = window.prompt("Название папки:");
+    if (name == null) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Укажите название папки.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const folder = await createFolder(token, {
+        name: trimmed,
+        type,
+        parentId: parentId == null ? null : parentId,
+      });
+      setNotice("Папка создана.");
+      setSection("active");
+      setActiveType(type);
+      setActiveFolderId(folder.id);
+      setActiveOpen(true);
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRenameFolder(folder) {
+    const name = window.prompt("Новое название папки:", folder.name);
+    if (name == null) {
+      return;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Укажите название папки.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await updateFolder(token, folder.id, { name: trimmed });
+      setNotice("Папка переименована.");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteFolder(folder) {
+    if (
+      !window.confirm(
+        `Удалить папку «${folder.name}»? Документы и вложенные папки останутся у родителя.`
+      )
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await deleteFolder(token, folder.id);
+      if (activeFolderId === folder.id) {
+        setActiveFolderId(folder.parentId == null ? null : folder.parentId);
+      }
+      setNotice("Папка удалена.");
+      await loadData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!token || !user) {
@@ -495,13 +628,19 @@ function App() {
         isResponsible={isResponsible}
         section={section}
         activeType={activeType}
+        activeFolderId={activeFolderId}
         activeOpen={activeOpen}
+        folders={folders}
         onToggleActive={() => setActiveOpen((current) => !current)}
         onInbox={() => {
           setSection("inbox");
           setSelectedDocumentId(null);
         }}
         onSelectType={selectType}
+        onSelectFolder={selectFolder}
+        onCreateFolder={handleCreateFolder}
+        onRenameFolder={handleRenameFolder}
+        onDeleteFolder={handleDeleteFolder}
         onArchive={() => {
           setSection("archive");
           setSelectedDocumentId(null);
@@ -550,6 +689,7 @@ function App() {
         <CreateDocumentModal
           createForm={createForm}
           setCreateForm={setCreateForm}
+          folders={folders}
           employeeUsers={employeeUsers}
           loading={loading}
           onClose={() => setCreateOpen(false)}
@@ -571,6 +711,7 @@ function App() {
             <DocumentPage
               document={selectedDocument}
               users={users}
+              folders={folders}
               isResponsible={isResponsible}
               isTrash={section === "trash"}
               loading={loading}

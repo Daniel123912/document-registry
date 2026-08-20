@@ -3,6 +3,7 @@ const { query, withTransaction } = require("../db");
 const { trashRetentionDays } = require("../config");
 const { decodeOriginalFilename } = require("../utils/filenames");
 const { normalizeDocument } = require("../utils/serializers");
+const { assertFolderMatchesType } = require("./folders");
 const {
   fileApiPath,
   placeUploadedFile,
@@ -265,13 +266,19 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
           }
 
           const documentNumber = manualNumber || (await generateDocumentNumber(client, parsed.type));
+          const folderId =
+            parsed.folderId == null || parsed.folderId === ""
+              ? null
+              : Number(parsed.folderId);
+          await assertFolderMatchesType(client, folderId, parsed.type);
+
           const created = await client.query(
             `
               INSERT INTO documents (
                 title, description, type, number, document_date, due_date, status, author_id,
-                draft_original_filename, draft_mime_type
+                draft_original_filename, draft_mime_type, folder_id
               )
-              VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9)
+              VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9, $10)
               RETURNING *
             `,
             [
@@ -284,6 +291,7 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
               authorId,
               originalName,
               file.mimetype,
+              folderId,
             ]
           );
 
@@ -480,6 +488,12 @@ async function updateRequisites({ documentId, parsed }) {
         excludeDocumentId: documentId,
       });
 
+      const folderId =
+        parsed.folderId == null || parsed.folderId === ""
+          ? null
+          : Number(parsed.folderId);
+      await assertFolderMatchesType(client, folderId, parsed.type);
+
       await client.query(
         `
           UPDATE documents
@@ -488,10 +502,19 @@ async function updateRequisites({ documentId, parsed }) {
               number = $4,
               document_date = $5,
               description = $6,
+              folder_id = $7,
               updated_at = NOW()
           WHERE id = $1
         `,
-        [documentId, parsed.title, parsed.type, documentNumber, documentDate, parsed.description]
+        [
+          documentId,
+          parsed.title,
+          parsed.type,
+          documentNumber,
+          documentDate,
+          parsed.description,
+          folderId,
+        ]
       );
 
       await client.query("DELETE FROM document_assignments WHERE document_id = $1", [documentId]);

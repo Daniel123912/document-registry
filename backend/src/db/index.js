@@ -55,6 +55,14 @@ async function initializeDatabase() {
       ON documents(deleted_at)
       WHERE deleted_at IS NOT NULL
   `);
+  await query(`
+    ALTER TABLE documents
+    ADD COLUMN IF NOT EXISTS folder_id BIGINT REFERENCES document_folders(id) ON DELETE SET NULL
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_documents_folder_id
+      ON documents(folder_id)
+  `);
   await migrateStoredFilePaths(query);
 }
 

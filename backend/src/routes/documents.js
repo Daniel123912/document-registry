@@ -82,6 +82,10 @@ router.post(
       documentDate: z.string().min(1),
       dueDate: z.string().min(1),
       description: z.string().optional().default(""),
+      folderId: z
+        .union([z.coerce.number().int().positive(), z.literal(""), z.null()])
+        .optional()
+        .transform((value) => (value === "" || value == null ? null : value)),
     });
 
     const parsed = schema.parse(req.body);
@@ -152,6 +156,10 @@ async function updateDocumentRequisites(req, res) {
     documentDate: z.string().min(1),
     description: z.string().optional().default(""),
     assignedUsers: z.array(z.coerce.number()).optional().default([]),
+    folderId: z
+      .union([z.coerce.number().int().positive(), z.literal(""), z.null()])
+      .optional()
+      .transform((value) => (value === "" || value == null ? null : value)),
   });
   const parsed = schema.parse(req.body);
 

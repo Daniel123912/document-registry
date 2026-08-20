@@ -168,4 +168,34 @@ export async function fetchDocumentFile(token, documentId, versionNo) {
   };
 }
 
+export async function fetchFolders(token, type) {
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  return request(`/folders${query}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createFolder(token, payload) {
+  return request("/folders", {
+    method: "POST",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFolder(token, folderId, payload) {
+  return request(`/folders/${folderId}`, {
+    method: "PATCH",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteFolder(token, folderId) {
+  return request(`/folders/${folderId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
 export { API_URL };

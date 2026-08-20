@@ -8,6 +8,7 @@ const { migrateMissingDocumentNumbers, purgeExpiredTrash } = require("./services
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const documentRoutes = require("./routes/documents");
+const folderRoutes = require("./routes/folders");
 const reportRoutes = require("./routes/reports");
 
 const app = express();
@@ -27,6 +28,7 @@ app.get("/health", (req, res) => {
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/documents", documentRoutes);
+app.use("/folders", folderRoutes);
 app.use("/reports", reportRoutes);
 
 app.use(errorHandler);

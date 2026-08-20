@@ -1,13 +1,17 @@
 import { TYPE_OPTIONS } from "../constants";
+import { flattenFoldersForSelect } from "../utils/folders";
 
 export default function CreateDocumentModal({
   createForm,
   setCreateForm,
+  folders = [],
   employeeUsers,
   loading,
   onClose,
   onSubmit,
 }) {
+  const folderOptions = flattenFoldersForSelect(folders, createForm.type);
+
   return (
     <div className="overlay" onClick={onClose}>
       <form
@@ -25,7 +29,11 @@ export default function CreateDocumentModal({
                   className="field-select"
                   value={createForm.type}
                   onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, type: event.target.value }))
+                    setCreateForm((current) => ({
+                      ...current,
+                      type: event.target.value,
+                      folderId: "",
+                    }))
                   }
                 >
                   {TYPE_OPTIONS.map((option) => (
@@ -51,6 +59,27 @@ export default function CreateDocumentModal({
                 />
               </label>
             </div>
+
+            <label className="form-field">
+              Папка
+              <select
+                className="field-select"
+                value={createForm.folderId || ""}
+                onChange={(event) =>
+                  setCreateForm((current) => ({
+                    ...current,
+                    folderId: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Без папки</option>
+                {folderOptions.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="form-field">
               Название документа
