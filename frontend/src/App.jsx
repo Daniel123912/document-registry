@@ -216,6 +216,22 @@ function App() {
     }
   }, [isResponsible]);
 
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setNotice(""), 3500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setError(""), 5000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
   function persistSession(nextToken, nextUser) {
     localStorage.setItem("bakorToken", nextToken);
     localStorage.setItem("bakorUser", JSON.stringify(nextUser));
