@@ -81,6 +81,13 @@ export async function createVersion(token, documentId, formData) {
   });
 }
 
+export async function deleteVersion(token, documentId, versionNo) {
+  return request(`/documents/${documentId}/versions/${versionNo}/delete`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 export async function acknowledgeDocument(token, documentId, versionNo) {
   return request(`/documents/${documentId}/acknowledgements`, {
     method: "POST",

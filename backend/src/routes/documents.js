@@ -148,6 +148,33 @@ router.post(
   })
 );
 
+async function removeDocumentVersion(req, res) {
+  const schema = z.object({
+    id: z.coerce.number().int().positive(),
+    versionNo: z.coerce.number().int().positive(),
+  });
+  const parsed = schema.parse(req.params);
+
+  await documents.deleteVersion({
+    documentId: parsed.id,
+    versionNo: parsed.versionNo,
+  });
+  res.json({ message: "Версия удалена." });
+}
+
+router.delete(
+  "/:id/versions/:versionNo",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(removeDocumentVersion)
+);
+router.post(
+  "/:id/versions/:versionNo/delete",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(removeDocumentVersion)
+);
+
 async function updateDocumentRequisites(req, res) {
   const schema = z.object({
     title: z.string().min(1),

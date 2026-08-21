@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import DOMPurify from "dompurify";
 import { fetchDocumentFile } from "../api/client";
 import { TYPE_OPTIONS, typeLabel } from "../constants";
@@ -145,6 +146,7 @@ export default function DocumentPage({
   onRestore,
   onPermanentDelete,
   onCreateVersion,
+  onDeleteVersion,
   onAcknowledge,
   onPublish,
   notice,
@@ -167,6 +169,8 @@ export default function DocumentPage({
     folderId: document.folderId == null ? "" : String(document.folderId),
   });
   const [versionForm, setVersionForm] = useState(emptyVersionForm);
+  const [versionMenu, setVersionMenu] = useState(null);
+  const versionMenuRef = useRef(null);
   const [filePreview, setFilePreview] = useState({
     url: null,
     mimeType: null,
@@ -247,11 +251,23 @@ export default function DocumentPage({
       folderId: document.folderId == null ? "" : String(document.folderId),
     });
     setVersionForm(emptyVersionForm);
+    setVersionMenu(null);
   }, [document.id]);
 
   useEffect(() => {
     setPreviewVersionNo(document.activeVersionNo || 0);
   }, [document.activeVersionNo]);
+
+  useEffect(() => {
+    const versions = document.versions || [];
+    if (!versions.length) {
+      setPreviewVersionNo(0);
+      return;
+    }
+    if (!versions.some((version) => version.versionNo === previewVersionNo)) {
+      setPreviewVersionNo(document.activeVersionNo || versions[0].versionNo);
+    }
+  }, [document.versions, document.activeVersionNo, previewVersionNo]);
 
   useEffect(() => {
     if (tab === "version" && document.status !== "published") {
@@ -283,6 +299,38 @@ export default function DocumentPage({
     window.document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => window.document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  useEffect(() => {
+    if (!versionMenu) {
+      return undefined;
+    }
+
+    function closeMenu(event) {
+      if (versionMenuRef.current?.contains(event.target)) {
+        return;
+      }
+      setVersionMenu(null);
+    }
+
+    function handleKey(event) {
+      if (event.key === "Escape") {
+        setVersionMenu(null);
+      }
+    }
+
+    window.document.addEventListener("mousedown", closeMenu);
+    window.document.addEventListener("contextmenu", closeMenu);
+    window.document.addEventListener("keydown", handleKey);
+    window.document.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.document.removeEventListener("mousedown", closeMenu);
+      window.document.removeEventListener("contextmenu", closeMenu);
+      window.document.removeEventListener("keydown", handleKey);
+      window.document.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [versionMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -432,6 +480,21 @@ export default function DocumentPage({
     setPreviewScale((current) => Math.min(2, Math.max(0.5, Number((current + delta).toFixed(2)))));
   }
 
+  function openVersionMenu(event, version) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 196;
+    const menuHeight = 48;
+    setVersionMenu({
+      versionNo: version.versionNo,
+      x: Math.min(event.clientX, window.innerWidth - menuWidth),
+      y: Math.min(event.clientY, window.innerHeight - menuHeight),
+    });
+  }
+
+  const canManageVersions = isResponsible && !isTrash;
+  const canDeleteSelectedVersion = (document.versions || []).length > 1;
+
   return (
     <section className="doc-page">
       <header className="doc-page-head">
@@ -516,6 +579,12 @@ export default function DocumentPage({
                       previewVersionNo === version.versionNo ? "version-chip active" : "version-chip"
                     }
                     onClick={() => setPreviewVersionNo(version.versionNo)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      if (canManageVersions) {
+                        openVersionMenu(event, version);
+                      }
+                    }}
                   >
                     <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
                     {version.changeReason ? (
@@ -929,6 +998,40 @@ export default function DocumentPage({
           </div>
         </form>
       ) : null}
+
+      {versionMenu && canManageVersions
+        ? createPortal(
+            <div
+              ref={versionMenuRef}
+              className="nav-context-menu"
+              style={{ left: versionMenu.x, top: versionMenu.y }}
+              role="menu"
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                disabled={!canDeleteSelectedVersion}
+                title={
+                  canDeleteSelectedVersion
+                    ? undefined
+                    : "Нельзя удалить единственную версию документа"
+                }
+                onClick={() => {
+                  if (!canDeleteSelectedVersion) {
+                    return;
+                  }
+                  onDeleteVersion(document.id, versionMenu.versionNo);
+                  setVersionMenu(null);
+                }}
+              >
+                Удалить версию
+              </button>
+            </div>,
+            window.document.body
+          )
+        : null}
     </section>
   );
 }

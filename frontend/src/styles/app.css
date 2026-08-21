@@ -254,6 +254,13 @@
   background: var(--danger-bg);
 }
 
+.nav-context-menu button:disabled,
+.nav-context-menu button:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
+
 .chevron {
   width: 10px;
   height: 10px;

@@ -7,6 +7,7 @@ import {
   createFolder,
   createVersion,
   deleteDocument,
+  deleteVersion,
   deleteFolder,
   fetchAssignedDocuments,
   fetchDocuments,
@@ -475,6 +476,18 @@ function App() {
     });
   }
 
+  function handleDeleteVersion(documentId, versionNo) {
+    openPrompt({
+      kind: "delete-version",
+      title: "Удалить версию",
+      description: `Удалить версию v${versionNo}? Файл этой версии будет удален безвозвратно.`,
+      confirmLabel: "Удалить",
+      danger: true,
+      documentId,
+      versionNo,
+    });
+  }
+
   async function handleRestore(documentId) {
     setLoading(true);
     setError("");
@@ -607,6 +620,9 @@ function App() {
         const result = await permanentDeleteDocument(token, prompt.documentId);
         setNotice(result.message);
         setSelectedDocumentId(null);
+      } else if (prompt.kind === "delete-version") {
+        const result = await deleteVersion(token, prompt.documentId, prompt.versionNo);
+        setNotice(result.message);
       }
       setPrompt(null);
       await loadData();
@@ -707,7 +723,7 @@ function App() {
 
       {prompt ? (
         <PromptModal
-          key={`${prompt.kind}-${prompt.folder?.id || prompt.documentId || prompt.parentId || prompt.type || "new"}`}
+          key={`${prompt.kind}-${prompt.folder?.id || prompt.documentId || prompt.versionNo || prompt.parentId || prompt.type || "new"}`}
           title={prompt.title}
           description={prompt.description}
           inputLabel={prompt.inputLabel}
@@ -753,6 +769,7 @@ function App() {
               onRestore={handleRestore}
               onPermanentDelete={handlePermanentDelete}
               onCreateVersion={handleCreateVersion}
+              onDeleteVersion={handleDeleteVersion}
               onAcknowledge={handleAcknowledge}
               onPublish={handlePublish}
               notice={notice}

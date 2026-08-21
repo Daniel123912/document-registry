@@ -461,6 +461,85 @@ async function createVersion({ documentId, changeReason, file, userId }) {
   }
 }
 
+async function deleteVersion({ documentId, versionNo }) {
+  const storedPath = await withTransaction(async (client) => {
+    const documentResult = await client.query(
+      "SELECT id, status, active_version_no FROM documents WHERE id = $1 AND deleted_at IS NULL",
+      [documentId]
+    );
+    const document = documentResult.rows[0];
+
+    if (!document) {
+      throw new Error("Документ не найден.");
+    }
+
+    if (document.status === "draft") {
+      throw httpError(409, "У черновика нет версий для удаления.");
+    }
+
+    const versionResult = await client.query(
+      "SELECT id, file_path FROM document_versions WHERE document_id = $1 AND version_no = $2",
+      [documentId, versionNo]
+    );
+    const version = versionResult.rows[0];
+
+    if (!version) {
+      throw httpError(404, "Версия не найдена.");
+    }
+
+    const remainingResult = await client.query(
+      `
+        SELECT version_no
+        FROM document_versions
+        WHERE document_id = $1 AND version_no <> $2
+        ORDER BY version_no DESC
+      `,
+      [documentId, versionNo]
+    );
+
+    if (!remainingResult.rows.length) {
+      throw httpError(409, "Нельзя удалить единственную версию документа.");
+    }
+
+    await client.query(
+      "DELETE FROM document_acknowledgements WHERE document_id = $1 AND version_no = $2",
+      [documentId, versionNo]
+    );
+    await client.query(
+      "DELETE FROM document_versions WHERE document_id = $1 AND version_no = $2",
+      [documentId, versionNo]
+    );
+
+    const nextActiveVersionNo =
+      Number(document.active_version_no) === versionNo
+        ? Number(remainingResult.rows[0].version_no)
+        : Number(document.active_version_no);
+
+    await client.query(
+      `
+        UPDATE documents
+        SET active_version_no = $2, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [documentId, nextActiveVersionNo]
+    );
+
+    return version.file_path;
+  });
+
+  if (!storedPath) {
+    return;
+  }
+
+  try {
+    await removeIfExists(resolveStoredFile(storedPath));
+  } catch (error) {
+    if (error.statusCode !== 404) {
+      throw error;
+    }
+  }
+}
+
 async function updateRequisites({ documentId, parsed }) {
   const documentDate = String(parsed.documentDate).slice(0, 10);
 
@@ -817,6 +896,7 @@ module.exports = {
   createDocument,
   publishDocument,
   createVersion,
+  deleteVersion,
   updateRequisites,
   migrateMissingDocumentNumbers,
   archiveDocument,
