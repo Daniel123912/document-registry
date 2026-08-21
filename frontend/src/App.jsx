@@ -32,6 +32,7 @@ import DocumentList from "./components/DocumentList";
 import ReportTable from "./components/ReportTable";
 import CreateDocumentModal from "./components/CreateDocumentModal";
 import DocumentPage from "./components/DocumentPage";
+import PromptModal from "./components/PromptModal";
 
 const emptyCreateForm = {
   title: "",
@@ -88,6 +89,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [prompt, setPrompt] = useState(null);
 
   const overlayOpenedAt = useRef(0);
   const isResponsible = user?.role === "responsible";
@@ -457,26 +459,20 @@ function App() {
     }
   }
 
-  async function handleDelete(documentId) {
-    if (
-      !window.confirm(
-        "Переместить документ в корзину? Его можно будет восстановить в течение 30 дней."
-      )
-    ) {
-      return;
-    }
-    setLoading(true);
+  function openPrompt(next) {
     setError("");
-    try {
-      const result = await deleteDocument(token, documentId);
-      setNotice(result.message);
-      setSelectedDocumentId(null);
-      await loadData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
+    setPrompt(next);
+  }
+
+  function handleDelete(documentId) {
+    openPrompt({
+      kind: "delete-document",
+      title: "В корзину",
+      description:
+        "Переместить документ в корзину? Его можно будет восстановить в течение 30 дней.",
+      confirmLabel: "В корзину",
+      documentId,
+    });
   }
 
   async function handleRestore(documentId) {
@@ -494,22 +490,15 @@ function App() {
     }
   }
 
-  async function handlePermanentDelete(documentId) {
-    if (!window.confirm("Удалить документ безвозвратно? Это действие нельзя отменить.")) {
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const result = await permanentDeleteDocument(token, documentId);
-      setNotice(result.message);
-      setSelectedDocumentId(null);
-      await loadData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
+  function handlePermanentDelete(documentId) {
+    openPrompt({
+      kind: "permanent-delete-document",
+      title: "Удалить безвозвратно",
+      description: "Удалить документ безвозвратно? Это действие нельзя отменить.",
+      confirmLabel: "Удалить",
+      danger: true,
+      documentId,
+    });
   }
 
   function selectType(type) {
@@ -528,79 +517,98 @@ function App() {
     setSelectedDocumentId(null);
   }
 
-  async function handleCreateFolder(type, parentId) {
-    const name = window.prompt("Название папки:");
-    if (name == null) {
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Укажите название папки.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    try {
-      const folder = await createFolder(token, {
-        name: trimmed,
-        type,
-        parentId: parentId == null ? null : parentId,
-      });
-      setNotice("Папка создана.");
-      setSection("active");
-      setActiveType(type);
-      setActiveFolderId(folder.id);
-      setActiveOpen(true);
-      await loadData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
+  function handleCreateFolder(type, parentId) {
+    openPrompt({
+      kind: "create-folder",
+      title: parentId ? "Создать подпапку" : "Создать папку",
+      inputLabel: "Название папки",
+      confirmLabel: "Создать",
+      type,
+      parentId,
+    });
   }
 
-  async function handleRenameFolder(folder) {
-    const name = window.prompt("Новое название папки:", folder.name);
-    if (name == null) {
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Укажите название папки.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    try {
-      await updateFolder(token, folder.id, { name: trimmed });
-      setNotice("Папка переименована.");
-      await loadData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
+  function handleRenameFolder(folder) {
+    openPrompt({
+      kind: "rename-folder",
+      title: "Переименовать папку",
+      inputLabel: "Название папки",
+      defaultValue: folder.name,
+      confirmLabel: "Сохранить",
+      folder,
+    });
   }
 
-  async function handleDeleteFolder(folder) {
-    if (
-      !window.confirm(
-        `Удалить папку «${folder.name}»? Документы и вложенные папки останутся у родителя.`
-      )
-    ) {
+  function handleDeleteFolder(folder) {
+    openPrompt({
+      kind: "delete-folder",
+      title: "Удалить папку",
+      description: `Удалить папку «${folder.name}»? Документы и вложенные папки останутся у родителя.`,
+      confirmLabel: "Удалить",
+      danger: true,
+      folder,
+    });
+  }
+
+  async function submitPrompt(value) {
+    if (!prompt) {
       return;
     }
 
-    setLoading(true);
-    setError("");
-    try {
-      await deleteFolder(token, folder.id);
-      if (activeFolderId === folder.id) {
-        setActiveFolderId(folder.parentId == null ? null : folder.parentId);
+    if (prompt.kind === "create-folder" || prompt.kind === "rename-folder") {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) {
+        setError("Укажите название папки.");
+        return;
       }
-      setNotice("Папка удалена.");
+
+      setLoading(true);
+      setError("");
+      try {
+        if (prompt.kind === "create-folder") {
+          const folder = await createFolder(token, {
+            name: trimmed,
+            type: prompt.type,
+            parentId: prompt.parentId == null ? null : prompt.parentId,
+          });
+          setNotice("Папка создана.");
+          setSection("active");
+          setActiveType(prompt.type);
+          setActiveFolderId(folder.id);
+          setActiveOpen(true);
+        } else {
+          await updateFolder(token, prompt.folder.id, { name: trimmed });
+          setNotice("Папка переименована.");
+        }
+        setPrompt(null);
+        await loadData();
+      } catch (requestError) {
+        setError(requestError.message);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      if (prompt.kind === "delete-folder") {
+        await deleteFolder(token, prompt.folder.id);
+        if (activeFolderId === prompt.folder.id) {
+          setActiveFolderId(prompt.folder.parentId == null ? null : prompt.folder.parentId);
+        }
+        setNotice("Папка удалена.");
+      } else if (prompt.kind === "delete-document") {
+        const result = await deleteDocument(token, prompt.documentId);
+        setNotice(result.message);
+        setSelectedDocumentId(null);
+      } else if (prompt.kind === "permanent-delete-document") {
+        const result = await permanentDeleteDocument(token, prompt.documentId);
+        setNotice(result.message);
+        setSelectedDocumentId(null);
+      }
+      setPrompt(null);
       await loadData();
     } catch (requestError) {
       setError(requestError.message);
@@ -694,6 +702,27 @@ function App() {
           loading={loading}
           onClose={() => setCreateOpen(false)}
           onSubmit={handleCreateDocument}
+        />
+      ) : null}
+
+      {prompt ? (
+        <PromptModal
+          key={`${prompt.kind}-${prompt.folder?.id || prompt.documentId || prompt.parentId || prompt.type || "new"}`}
+          title={prompt.title}
+          description={prompt.description}
+          inputLabel={prompt.inputLabel}
+          defaultValue={prompt.defaultValue || ""}
+          confirmLabel={prompt.confirmLabel}
+          danger={Boolean(prompt.danger)}
+          loading={loading}
+          error={error}
+          onClose={() => {
+            if (!loading) {
+              setPrompt(null);
+              setError("");
+            }
+          }}
+          onConfirm={submitPrompt}
         />
       ) : null}
 
