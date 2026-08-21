@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TYPE_OPTIONS } from "../constants";
 import { buildFolderChildrenMap, foldersForType } from "../utils/folders";
 
@@ -29,9 +29,7 @@ function FolderBranch({
   isResponsible,
   onSelectFolder,
   onToggleFolder,
-  onCreateFolder,
-  onRenameFolder,
-  onDeleteFolder,
+  onFolderContextMenu,
 }) {
   const byParent = useMemo(() => buildFolderChildrenMap(folders), [folders]);
   const children = byParent.get(parentId == null ? "root" : String(parentId)) || [];
@@ -50,7 +48,12 @@ function FolderBranch({
 
         return (
           <div key={folder.id} className="nav-tree-branch">
-            <div className={isActive ? "nav-tree-row active" : "nav-tree-row"}>
+            <div
+              className={isActive ? "nav-tree-row active" : "nav-tree-row"}
+              onContextMenu={
+                isResponsible ? (event) => onFolderContextMenu(event, folder) : undefined
+              }
+            >
               <TreeToggle
                 visible={hasChildren}
                 open={isExpanded}
@@ -63,34 +66,6 @@ function FolderBranch({
               >
                 {folder.name}
               </button>
-              {isResponsible ? (
-                <div className="nav-folder-actions">
-                  <button
-                    type="button"
-                    className="nav-folder-action"
-                    title="Создать подпапку"
-                    onClick={() => onCreateFolder(folder.type, folder.id)}
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-folder-action"
-                    title="Переименовать"
-                    onClick={() => onRenameFolder(folder)}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-folder-action"
-                    title="Удалить"
-                    onClick={() => onDeleteFolder(folder)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : null}
             </div>
             {isExpanded ? (
               <FolderBranch
@@ -103,9 +78,7 @@ function FolderBranch({
                 isResponsible={isResponsible}
                 onSelectFolder={onSelectFolder}
                 onToggleFolder={onToggleFolder}
-                onCreateFolder={onCreateFolder}
-                onRenameFolder={onRenameFolder}
-                onDeleteFolder={onDeleteFolder}
+                onFolderContextMenu={onFolderContextMenu}
               />
             ) : null}
           </div>
@@ -139,6 +112,8 @@ export default function Sidebar({
   const [workOpen, setWorkOpen] = useState(true);
   const [expandedTypes, setExpandedTypes] = useState(() => new Set());
   const [expandedFolders, setExpandedFolders] = useState(() => new Set());
+  const [contextMenu, setContextMenu] = useState(null);
+  const contextMenuRef = useRef(null);
 
   useEffect(() => {
     if (section === "inbox") {
@@ -211,6 +186,50 @@ export default function Sidebar({
     });
   }
 
+  function openContextMenu(event, menu) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 210;
+    const menuHeight = menu.kind === "folder" ? 132 : 48;
+    setContextMenu({
+      ...menu,
+      x: Math.min(event.clientX, window.innerWidth - menuWidth),
+      y: Math.min(event.clientY, window.innerHeight - menuHeight),
+    });
+  }
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return undefined;
+    }
+
+    function closeMenu(event) {
+      if (contextMenuRef.current?.contains(event.target)) {
+        return;
+      }
+      setContextMenu(null);
+    }
+
+    function handleKey(event) {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    }
+
+    document.addEventListener("mousedown", closeMenu);
+    document.addEventListener("contextmenu", closeMenu);
+    document.addEventListener("keydown", handleKey);
+    document.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      document.removeEventListener("mousedown", closeMenu);
+      document.removeEventListener("contextmenu", closeMenu);
+      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [contextMenu]);
+
   return (
     <aside className="sidebar">
       <h1 className="logo">Реестр</h1>
@@ -266,7 +285,18 @@ export default function Sidebar({
 
                       return (
                         <div key={option.value} className="nav-tree-branch">
-                          <div className={typeActive ? "nav-tree-row active" : "nav-tree-row"}>
+                          <div
+                            className={typeActive ? "nav-tree-row active" : "nav-tree-row"}
+                            onContextMenu={
+                              isResponsible
+                                ? (event) =>
+                                    openContextMenu(event, {
+                                      kind: "type",
+                                      type: option.value,
+                                    })
+                                : undefined
+                            }
+                          >
                             <TreeToggle
                               visible={typeFolders.length > 0}
                               open={typeExpanded}
@@ -279,16 +309,6 @@ export default function Sidebar({
                             >
                               {option.label}
                             </button>
-                            {isResponsible ? (
-                              <button
-                                type="button"
-                                className="nav-folder-action"
-                                title="Создать папку"
-                                onClick={() => onCreateFolder(option.value, null)}
-                              >
-                                +
-                              </button>
-                            ) : null}
                           </div>
 
                           {typeExpanded ? (
@@ -302,9 +322,9 @@ export default function Sidebar({
                               isResponsible={isResponsible}
                               onSelectFolder={onSelectFolder}
                               onToggleFolder={toggleFolder}
-                              onCreateFolder={onCreateFolder}
-                              onRenameFolder={onRenameFolder}
-                              onDeleteFolder={onDeleteFolder}
+                              onFolderContextMenu={(event, folder) =>
+                                openContextMenu(event, { kind: "folder", folder })
+                              }
                             />
                           ) : null}
                         </div>
@@ -356,6 +376,56 @@ export default function Sidebar({
           Выйти
         </button>
       </div>
+
+      {contextMenu ? (
+        <div
+          ref={contextMenuRef}
+          className="nav-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              if (contextMenu.kind === "folder") {
+                onCreateFolder(contextMenu.folder.type, contextMenu.folder.id);
+              } else {
+                onCreateFolder(contextMenu.type, null);
+              }
+              setContextMenu(null);
+            }}
+          >
+            Добавить папку
+          </button>
+          {contextMenu.kind === "folder" ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onRenameFolder(contextMenu.folder);
+                  setContextMenu(null);
+                }}
+              >
+                Переименовать
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  onDeleteFolder(contextMenu.folder);
+                  setContextMenu(null);
+                }}
+              >
+                Удалить
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
     </aside>
   );
 }
