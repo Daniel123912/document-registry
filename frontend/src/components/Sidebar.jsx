@@ -2,10 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { TYPE_OPTIONS } from "../constants";
 import { buildFolderChildrenMap, foldersForType } from "../utils/folders";
 
+function TreeToggle({ open, onClick, visible }) {
+  if (!visible) {
+    return <span className="nav-folder-toggle spacer" />;
+  }
+
+  return (
+    <button
+      type="button"
+      className="nav-folder-toggle"
+      onClick={onClick}
+      aria-label={open ? "Свернуть" : "Развернуть"}
+    >
+      <span className={open ? "chevron open" : "chevron"} />
+    </button>
+  );
+}
+
 function FolderBranch({
   folders,
   parentId,
-  depth,
   activeType,
   activeFolderId,
   section,
@@ -24,86 +40,79 @@ function FolderBranch({
     return null;
   }
 
-  return children.map((folder) => {
-    const hasChildren = (byParent.get(String(folder.id)) || []).length > 0;
-    const isExpanded = expandedFolders.has(folder.id);
-    const isActive =
-      section === "active" && activeType === folder.type && activeFolderId === folder.id;
+  return (
+    <div className="nav-tree-children">
+      {children.map((folder) => {
+        const hasChildren = (byParent.get(String(folder.id)) || []).length > 0;
+        const isExpanded = expandedFolders.has(folder.id);
+        const isActive =
+          section === "active" && activeType === folder.type && activeFolderId === folder.id;
 
-    return (
-      <div key={folder.id} className="nav-folder-block">
-        <div
-          className={isActive ? "nav-folder-row active" : "nav-folder-row"}
-          style={{ paddingLeft: `${14 + depth * 14}px` }}
-        >
-          {hasChildren ? (
-            <button
-              type="button"
-              className="nav-folder-toggle"
-              onClick={() => onToggleFolder(folder.id)}
-              aria-label={isExpanded ? "Свернуть" : "Развернуть"}
-            >
-              <span className={isExpanded ? "chevron open" : "chevron"} />
-            </button>
-          ) : (
-            <span className="nav-folder-toggle spacer" />
-          )}
-          <button
-            type="button"
-            className="nav-folder-name"
-            onClick={() => onSelectFolder(folder.type, folder.id)}
-          >
-            {folder.name}
-          </button>
-          {isResponsible ? (
-            <div className="nav-folder-actions">
+        return (
+          <div key={folder.id} className="nav-tree-branch">
+            <div className={isActive ? "nav-tree-row active" : "nav-tree-row"}>
+              <TreeToggle
+                visible={hasChildren}
+                open={isExpanded}
+                onClick={() => onToggleFolder(folder.id)}
+              />
               <button
                 type="button"
-                className="nav-folder-action"
-                title="Создать подпапку"
-                onClick={() => onCreateFolder(folder.type, folder.id)}
+                className="nav-tree-name"
+                onClick={() => onSelectFolder(folder.type, folder.id)}
               >
-                +
+                {folder.name}
               </button>
-              <button
-                type="button"
-                className="nav-folder-action"
-                title="Переименовать"
-                onClick={() => onRenameFolder(folder)}
-              >
-                ✎
-              </button>
-              <button
-                type="button"
-                className="nav-folder-action"
-                title="Удалить"
-                onClick={() => onDeleteFolder(folder)}
-              >
-                ×
-              </button>
+              {isResponsible ? (
+                <div className="nav-folder-actions">
+                  <button
+                    type="button"
+                    className="nav-folder-action"
+                    title="Создать подпапку"
+                    onClick={() => onCreateFolder(folder.type, folder.id)}
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="nav-folder-action"
+                    title="Переименовать"
+                    onClick={() => onRenameFolder(folder)}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    className="nav-folder-action"
+                    title="Удалить"
+                    onClick={() => onDeleteFolder(folder)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
-        {isExpanded ? (
-          <FolderBranch
-            folders={folders}
-            parentId={folder.id}
-            depth={depth + 1}
-            activeType={activeType}
-            activeFolderId={activeFolderId}
-            section={section}
-            expandedFolders={expandedFolders}
-            isResponsible={isResponsible}
-            onSelectFolder={onSelectFolder}
-            onToggleFolder={onToggleFolder}
-            onCreateFolder={onCreateFolder}
-            onRenameFolder={onRenameFolder}
-            onDeleteFolder={onDeleteFolder}
-          />
-        ) : null}
-      </div>
-    );
-  });
+            {isExpanded ? (
+              <FolderBranch
+                folders={folders}
+                parentId={folder.id}
+                activeType={activeType}
+                activeFolderId={activeFolderId}
+                section={section}
+                expandedFolders={expandedFolders}
+                isResponsible={isResponsible}
+                onSelectFolder={onSelectFolder}
+                onToggleFolder={onToggleFolder}
+                onCreateFolder={onCreateFolder}
+                onRenameFolder={onRenameFolder}
+                onDeleteFolder={onDeleteFolder}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function Sidebar({
@@ -127,8 +136,16 @@ export default function Sidebar({
   onCreate,
   onLogout,
 }) {
+  const [workOpen, setWorkOpen] = useState(true);
   const [expandedTypes, setExpandedTypes] = useState(() => new Set());
   const [expandedFolders, setExpandedFolders] = useState(() => new Set());
+
+  useEffect(() => {
+    if (section === "inbox") {
+      return;
+    }
+    setWorkOpen(true);
+  }, [section]);
 
   useEffect(() => {
     if (section === "active" && activeType) {
@@ -211,103 +228,125 @@ export default function Sidebar({
           Мои документы
         </button>
 
-        <div className="nav-title">Рабочие разделы</div>
+        <div className="nav-tree">
+          <div className="nav-tree-row nav-tree-root">
+            <TreeToggle
+              visible
+              open={workOpen}
+              onClick={() => setWorkOpen((current) => !current)}
+            />
+            <button
+              type="button"
+              className="nav-tree-name"
+              onClick={() => setWorkOpen((current) => !current)}
+            >
+              Рабочие разделы
+            </button>
+          </div>
 
-        <button className="nav-parent" onClick={onToggleActive}>
-          <span>Действующие документы</span>
-          <span className={activeOpen ? "chevron open" : "chevron"} />
-        </button>
-
-        {activeOpen
-          ? TYPE_OPTIONS.map((option) => {
-              const typeFolders = foldersForType(folders, option.value);
-              const typeExpanded = expandedTypes.has(option.value);
-              const typeActive =
-                section === "active" &&
-                activeType === option.value &&
-                activeFolderId == null;
-
-              return (
-                <div key={option.value} className="nav-type-block">
-                  <div className={typeActive ? "nav-type-row active" : "nav-type-row"}>
-                    {typeFolders.length ? (
-                      <button
-                        type="button"
-                        className="nav-folder-toggle"
-                        onClick={() => toggleTypeFolders(option.value)}
-                        aria-label={typeExpanded ? "Свернуть папки" : "Развернуть папки"}
-                      >
-                        <span className={typeExpanded ? "chevron open" : "chevron"} />
-                      </button>
-                    ) : (
-                      <span className="nav-folder-toggle spacer" />
-                    )}
-                    <button
-                      type="button"
-                      className="nav-type-name"
-                      onClick={() => onSelectType(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                    {isResponsible ? (
-                      <button
-                        type="button"
-                        className="nav-folder-action"
-                        title="Создать папку"
-                        onClick={() => onCreateFolder(option.value, null)}
-                      >
-                        +
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {typeExpanded ? (
-                    <FolderBranch
-                      folders={typeFolders}
-                      parentId={null}
-                      depth={1}
-                      activeType={activeType}
-                      activeFolderId={activeFolderId}
-                      section={section}
-                      expandedFolders={expandedFolders}
-                      isResponsible={isResponsible}
-                      onSelectFolder={onSelectFolder}
-                      onToggleFolder={toggleFolder}
-                      onCreateFolder={onCreateFolder}
-                      onRenameFolder={onRenameFolder}
-                      onDeleteFolder={onDeleteFolder}
-                    />
-                  ) : null}
+          {workOpen ? (
+            <div className="nav-tree-children">
+              <div className="nav-tree-branch">
+                <div className="nav-tree-row">
+                  <TreeToggle visible open={activeOpen} onClick={onToggleActive} />
+                  <button type="button" className="nav-tree-name" onClick={onToggleActive}>
+                    Действующие документы
+                  </button>
                 </div>
-              );
-            })
-          : null}
 
-        <button
-          className={section === "archive" ? "nav-parent active" : "nav-parent"}
-          onClick={onArchive}
-        >
-          <span>Архив</span>
-          <span className="chevron" />
-        </button>
+                {activeOpen ? (
+                  <div className="nav-tree-children">
+                    {TYPE_OPTIONS.map((option) => {
+                      const typeFolders = foldersForType(folders, option.value);
+                      const typeExpanded = expandedTypes.has(option.value);
+                      const typeActive =
+                        section === "active" &&
+                        activeType === option.value &&
+                        activeFolderId == null;
 
-        {isResponsible ? (
-          <button
-            className={section === "trash" ? "nav-item active" : "nav-item"}
-            onClick={onTrash}
-          >
-            Корзина
-          </button>
-        ) : null}
+                      return (
+                        <div key={option.value} className="nav-tree-branch">
+                          <div className={typeActive ? "nav-tree-row active" : "nav-tree-row"}>
+                            <TreeToggle
+                              visible={typeFolders.length > 0}
+                              open={typeExpanded}
+                              onClick={() => toggleTypeFolders(option.value)}
+                            />
+                            <button
+                              type="button"
+                              className="nav-tree-name"
+                              onClick={() => onSelectType(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                            {isResponsible ? (
+                              <button
+                                type="button"
+                                className="nav-folder-action"
+                                title="Создать папку"
+                                onClick={() => onCreateFolder(option.value, null)}
+                              >
+                                +
+                              </button>
+                            ) : null}
+                          </div>
 
-        {isResponsible ? (
-          <button
-            className={section === "report" ? "nav-item active" : "nav-item"}
-            onClick={onReport}
-          >
-            Отчеты
-          </button>
-        ) : null}
+                          {typeExpanded ? (
+                            <FolderBranch
+                              folders={typeFolders}
+                              parentId={null}
+                              activeType={activeType}
+                              activeFolderId={activeFolderId}
+                              section={section}
+                              expandedFolders={expandedFolders}
+                              isResponsible={isResponsible}
+                              onSelectFolder={onSelectFolder}
+                              onToggleFolder={toggleFolder}
+                              onCreateFolder={onCreateFolder}
+                              onRenameFolder={onRenameFolder}
+                              onDeleteFolder={onDeleteFolder}
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                className={section === "archive" ? "nav-tree-row active" : "nav-tree-row"}
+                onClick={onArchive}
+              >
+                <TreeToggle visible={false} />
+                <span className="nav-tree-name">Архив</span>
+              </button>
+
+              {isResponsible ? (
+                <button
+                  type="button"
+                  className={section === "trash" ? "nav-tree-row active" : "nav-tree-row"}
+                  onClick={onTrash}
+                >
+                  <TreeToggle visible={false} />
+                  <span className="nav-tree-name">Корзина</span>
+                </button>
+              ) : null}
+
+              {isResponsible ? (
+                <button
+                  type="button"
+                  className={section === "report" ? "nav-tree-row active" : "nav-tree-row"}
+                  onClick={onReport}
+                >
+                  <TreeToggle visible={false} />
+                  <span className="nav-tree-name">Отчеты</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </nav>
 
       <div className="sidebar-foot">
