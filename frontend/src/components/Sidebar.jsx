@@ -2,6 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { TYPE_OPTIONS } from "../constants";
 import { buildFolderChildrenMap, foldersForType } from "../utils/folders";
 
+function navTreeRowClass({ active = false, menuOpen = false, root = false }) {
+  return [
+    "nav-tree-row",
+    root ? "nav-tree-root" : "",
+    active ? "active" : "",
+    menuOpen ? "menu-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function TreeToggle({ open, onClick, visible }) {
   if (!visible) {
     return <span className="nav-folder-toggle spacer" />;
@@ -30,6 +41,7 @@ function FolderBranch({
   onSelectFolder,
   onToggleFolder,
   onFolderContextMenu,
+  contextFolderId,
 }) {
   const byParent = useMemo(() => buildFolderChildrenMap(folders), [folders]);
   const children = byParent.get(parentId == null ? "root" : String(parentId)) || [];
@@ -49,7 +61,10 @@ function FolderBranch({
         return (
           <div key={folder.id} className="nav-tree-branch">
             <div
-              className={isActive ? "nav-tree-row active" : "nav-tree-row"}
+              className={navTreeRowClass({
+                active: isActive,
+                menuOpen: contextFolderId === folder.id,
+              })}
               onContextMenu={
                 isResponsible ? (event) => onFolderContextMenu(event, folder) : undefined
               }
@@ -79,6 +94,7 @@ function FolderBranch({
                 onSelectFolder={onSelectFolder}
                 onToggleFolder={onToggleFolder}
                 onFolderContextMenu={onFolderContextMenu}
+                contextFolderId={contextFolderId}
               />
             ) : null}
           </div>
@@ -248,7 +264,7 @@ export default function Sidebar({
         </button>
 
         <div className="nav-tree">
-          <div className="nav-tree-row nav-tree-root">
+          <div className={navTreeRowClass({ root: true })}>
             <TreeToggle
               visible
               open={workOpen}
@@ -266,7 +282,7 @@ export default function Sidebar({
           {workOpen ? (
             <div className="nav-tree-children">
               <div className="nav-tree-branch">
-                <div className="nav-tree-row">
+                <div className={navTreeRowClass({})}>
                   <TreeToggle visible open={activeOpen} onClick={onToggleActive} />
                   <button type="button" className="nav-tree-name" onClick={onToggleActive}>
                     Действующие документы
@@ -286,7 +302,10 @@ export default function Sidebar({
                       return (
                         <div key={option.value} className="nav-tree-branch">
                           <div
-                            className={typeActive ? "nav-tree-row active" : "nav-tree-row"}
+                            className={navTreeRowClass({
+                              active: typeActive,
+                              menuOpen: contextMenu?.kind === "type" && contextMenu.type === option.value,
+                            })}
                             onContextMenu={
                               isResponsible
                                 ? (event) =>
@@ -325,6 +344,9 @@ export default function Sidebar({
                               onFolderContextMenu={(event, folder) =>
                                 openContextMenu(event, { kind: "folder", folder })
                               }
+                              contextFolderId={
+                                contextMenu?.kind === "folder" ? contextMenu.folder.id : null
+                              }
                             />
                           ) : null}
                         </div>
@@ -336,7 +358,7 @@ export default function Sidebar({
 
               <button
                 type="button"
-                className={section === "archive" ? "nav-tree-row active" : "nav-tree-row"}
+                className={navTreeRowClass({ active: section === "archive" })}
                 onClick={onArchive}
               >
                 <TreeToggle visible={false} />
@@ -346,7 +368,7 @@ export default function Sidebar({
               {isResponsible ? (
                 <button
                   type="button"
-                  className={section === "trash" ? "nav-tree-row active" : "nav-tree-row"}
+                  className={navTreeRowClass({ active: section === "trash" })}
                   onClick={onTrash}
                 >
                   <TreeToggle visible={false} />
@@ -357,7 +379,7 @@ export default function Sidebar({
               {isResponsible ? (
                 <button
                   type="button"
-                  className={section === "report" ? "nav-tree-row active" : "nav-tree-row"}
+                  className={navTreeRowClass({ active: section === "report" })}
                   onClick={onReport}
                 >
                   <TreeToggle visible={false} />

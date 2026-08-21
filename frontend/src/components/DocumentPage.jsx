@@ -719,12 +719,6 @@ export default function DocumentPage({
               )}
             </div>
 
-            {previewFile.url ? (
-              <a className="preview-open" href={previewFile.url} target="_blank" rel="noreferrer">
-                Открыть файл в новой вкладке
-              </a>
-            ) : null}
-
             <div className="doc-actions">
               {isTrash && isResponsible ? (
                 <>
