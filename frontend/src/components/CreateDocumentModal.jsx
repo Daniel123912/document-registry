@@ -72,7 +72,7 @@ export default function CreateDocumentModal({
                   }))
                 }
               >
-                <option value="">Без папки</option>
+                <option value="">Выберите папку</option>
                 {folderOptions.map((folder) => (
                   <option key={folder.id} value={folder.id}>
                     {folder.label}

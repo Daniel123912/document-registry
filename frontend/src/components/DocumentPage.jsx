@@ -754,7 +754,7 @@ export default function DocumentPage({
                   }))
                 }
               >
-                <option value="">Без папки</option>
+                <option value="">Выберите папку</option>
                 {folderOptions.map((folder) => (
                   <option key={folder.id} value={folder.id}>
                     {folder.label}
