@@ -1,9 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import DOMPurify from "dompurify";
 import { fetchDocumentFile } from "../api/client";
 import { TYPE_OPTIONS, typeLabel } from "../constants";
+import {
+  buildLineDiff,
+  htmlToLines,
+  previousVersionNo,
+  sheetToLines,
+} from "../utils/documentDiff";
+import DiffViewer from "./DiffViewer";
 import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
+import {
+  isImageFile,
+  isLegacyWordFile,
+  isPdfFile,
+  isSpreadsheetFile,
+  isWordFile,
+  parseDocumentPreview,
+  sheetToPreviewHtml,
+} from "../utils/filePreview";
 import { flattenFoldersForSelect } from "../utils/folders";
 
 const emptyVersionForm = {
@@ -11,35 +26,17 @@ const emptyVersionForm = {
   versionFile: null,
 };
 
-function isImageFile(filename, mimeType) {
-  return (
-    String(mimeType || "").startsWith("image/") ||
-    /\.(png|jpe?g|gif|webp)$/i.test(filename || "")
-  );
-}
-
-function isPdfFile(filename, mimeType) {
-  return mimeType === "application/pdf" || /\.pdf$/i.test(filename || "");
-}
-
-function isWordFile(filename, mimeType) {
-  return (
-    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    /\.docx$/i.test(filename || "")
-  );
-}
-
-function isLegacyWordFile(filename, mimeType) {
-  return mimeType === "application/msword" || /\.doc$/i.test(filename || "");
-}
-
-function isSpreadsheetFile(filename, mimeType) {
-  return (
-    mimeType === "application/vnd.ms-excel" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    /\.xlsx?$/i.test(filename || "")
-  );
-}
+const emptyComparePreview = {
+  url: null,
+  mimeType: null,
+  docHtml: "",
+  textLines: [],
+  sheetNames: [],
+  size: 0,
+  loading: false,
+  error: "",
+  name: "",
+};
 
 function formatFileSize(bytes) {
   const size = Number(bytes);
@@ -59,68 +56,10 @@ function pdfViewerSrc(url) {
   return url ? `${url}#toolbar=1&navpanes=0` : "";
 }
 
-async function blobLooksLikeHtml(blob) {
-  try {
-    const head = (await blob.slice(0, 256).text()).trim();
-    return /^<(?:!doctype\s+html|html|head|body|table)\b/i.test(head);
-  } catch {
-    return false;
-  }
-}
-
-function extractHtmlTable(html) {
-  const match = String(html || "").match(/<table[\s\S]*<\/table>/i);
-  return match ? match[0] : "";
-}
-
-function sanitizePreviewHtml(html) {
-  return DOMPurify.sanitize(String(html || ""), {
-    USE_PROFILES: { html: true },
-    FORBID_TAGS: ["form", "input", "button", "script", "style", "svg", "math"],
-    FORBID_ATTR: ["id", "name"],
-  });
-}
-
 function previewFilename(document, previewVersionNo) {
   const versions = document.versions || [];
   const selected = versions.find((version) => version.versionNo === previewVersionNo);
   return selected?.originalFilename || document.currentFilename || "";
-}
-
-const MAX_PREVIEW_PARSE_BYTES = 15 * 1024 * 1024;
-const MAX_SHEET_PREVIEW_CELLS = 20000;
-
-function sheetToPreviewHtml(sheet, xlsx) {
-  if (!sheet || !xlsx?.utils || !sheet["!ref"]) {
-    return "";
-  }
-
-  try {
-    const range = xlsx.utils.decode_range(sheet["!ref"]);
-    const rows = range.e.r - range.s.r + 1;
-    const cols = range.e.c - range.s.c + 1;
-    const cellCount = rows * cols;
-    let previewSheet = sheet;
-
-    if (cellCount > MAX_SHEET_PREVIEW_CELLS) {
-      previewSheet = {
-        ...sheet,
-        "!ref": xlsx.utils.encode_range({
-          s: range.s,
-          e: {
-            r: range.s.r + Math.min(rows, 150) - 1,
-            c: range.s.c + Math.min(cols, 40) - 1,
-          },
-        }),
-      };
-    }
-
-    return sanitizePreviewHtml(
-      xlsx.utils.sheet_to_html(previewSheet, { header: "", footer: "" })
-    );
-  } catch {
-    return "";
-  }
 }
 
 function versionLabel(versionNo, activeVersionNo) {
@@ -157,8 +96,11 @@ export default function DocumentPage({
   const [activeSheetName, setActiveSheetName] = useState("");
   const [previewScale, setPreviewScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [compareWithVersionNo, setCompareWithVersionNo] = useState(null);
   const previewStageRef = useRef(null);
   const spreadsheetRef = useRef({ workbook: null, xlsx: null });
+  const compareSpreadsheetRef = useRef({ workbook: null, xlsx: null });
   const [editForm, setEditForm] = useState({
     title: document.title || "",
     type: document.type,
@@ -175,11 +117,13 @@ export default function DocumentPage({
     url: null,
     mimeType: null,
     docHtml: "",
+    textLines: [],
     sheetNames: [],
     size: 0,
     loading: false,
     error: "",
   });
+  const [comparePreview, setComparePreview] = useState(emptyComparePreview);
 
   const employeeUsers = (Array.isArray(users) ? users : []).filter(
     (candidate) => candidate.role === "employee"
@@ -208,25 +152,108 @@ export default function DocumentPage({
     };
   }, [document, previewVersionNo, filePreview]);
 
+  const canCompare = (document.versions || []).length > 1;
+  const compareVersionOptions = useMemo(
+    () =>
+      (document.versions || [])
+        .filter((version) => version.versionNo !== previewVersionNo)
+        .sort((left, right) => right.versionNo - left.versionNo),
+    [document.versions, previewVersionNo]
+  );
+
+  const comparing =
+    compareEnabled &&
+    canCompare &&
+    Boolean(compareWithVersionNo) &&
+    !filePreview.loading &&
+    !comparePreview.loading;
+
   const canZoom =
-    isImageFile(previewFile.name, previewFile.mimeType) ||
-    isWordFile(previewFile.name, previewFile.mimeType) ||
-    isSpreadsheetFile(previewFile.name, previewFile.mimeType);
+    !comparing &&
+    (isImageFile(previewFile.name, previewFile.mimeType) ||
+      isWordFile(previewFile.name, previewFile.mimeType) ||
+      isSpreadsheetFile(previewFile.name, previewFile.mimeType));
+
+  const lineDiff = useMemo(() => {
+    if (!comparing || filePreview.loading || comparePreview.loading) {
+      return null;
+    }
+    if (isWordFile(previewFile.name, previewFile.mimeType)) {
+      return buildLineDiff(
+        htmlToLines(comparePreview.docHtml),
+        htmlToLines(filePreview.docHtml)
+      );
+    }
+    if (
+      isSpreadsheetFile(previewFile.name, previewFile.mimeType) &&
+      filePreview.docHtml &&
+      !filePreview.sheetNames.length
+    ) {
+      return buildLineDiff(
+        htmlToLines(comparePreview.docHtml),
+        htmlToLines(filePreview.docHtml)
+      );
+    }
+    if (isSpreadsheetFile(previewFile.name, previewFile.mimeType)) {
+      const current = spreadsheetRef.current;
+      const base = compareSpreadsheetRef.current;
+      const xlsx = current.xlsx || base.xlsx;
+      if (!xlsx) {
+        return null;
+      }
+      return buildLineDiff(
+        sheetToLines(base.workbook?.Sheets?.[activeSheetName], xlsx),
+        sheetToLines(current.workbook?.Sheets?.[activeSheetName], xlsx)
+      );
+    }
+    return null;
+  }, [
+    comparing,
+    previewFile.name,
+    previewFile.mimeType,
+    filePreview.docHtml,
+    filePreview.textLines,
+    filePreview.sheetNames,
+    filePreview.loading,
+    comparePreview.docHtml,
+    comparePreview.textLines,
+    comparePreview.loading,
+    comparePreview.sheetNames,
+    activeSheetName,
+  ]);
 
   const stageKind =
-    filePreview.loading || filePreview.error
+    filePreview.loading || filePreview.error || (compareEnabled && comparePreview.loading)
       ? "empty"
-      : isPdfFile(previewFile.name, previewFile.mimeType)
-        ? "embed"
-        : isImageFile(previewFile.name, previewFile.mimeType)
-          ? "image"
-          : isSpreadsheetFile(previewFile.name, previewFile.mimeType)
-            ? "sheet"
-            : isWordFile(previewFile.name, previewFile.mimeType)
-              ? "docx"
-              : "empty";
+      : comparing && lineDiff
+        ? "diff"
+        : comparing &&
+            (isPdfFile(previewFile.name, previewFile.mimeType) ||
+              isImageFile(previewFile.name, previewFile.mimeType))
+          ? "compare-split"
+          : isPdfFile(previewFile.name, previewFile.mimeType)
+            ? "embed"
+            : isImageFile(previewFile.name, previewFile.mimeType)
+              ? "image"
+              : isSpreadsheetFile(previewFile.name, previewFile.mimeType)
+                ? "sheet"
+                : isWordFile(previewFile.name, previewFile.mimeType)
+                  ? "docx"
+                  : "empty";
+
+  const sheetNames = useMemo(() => {
+    if (!comparing) {
+      return filePreview.sheetNames;
+    }
+    return Array.from(
+      new Set([...(filePreview.sheetNames || []), ...(comparePreview.sheetNames || [])])
+    );
+  }, [comparing, filePreview.sheetNames, comparePreview.sheetNames]);
 
   const activeSheetHtml = useMemo(() => {
+    if (filePreview.loading) {
+      return "";
+    }
     const { workbook, xlsx } = spreadsheetRef.current;
     if (!workbook || !xlsx || !activeSheetName) {
       return "";
@@ -241,6 +268,8 @@ export default function DocumentPage({
   useEffect(() => {
     setTab("preview");
     setPreviewVersionNo(document.activeVersionNo || 0);
+    setCompareEnabled(false);
+    setCompareWithVersionNo(null);
     setEditForm({
       title: document.title || "",
       type: document.type,
@@ -270,6 +299,26 @@ export default function DocumentPage({
   }, [document.versions, document.activeVersionNo, previewVersionNo]);
 
   useEffect(() => {
+    if (!canCompare) {
+      setCompareEnabled(false);
+      setCompareWithVersionNo(null);
+      return;
+    }
+    const fallback = previousVersionNo(document.versions, previewVersionNo);
+    setCompareWithVersionNo((current) => {
+      if (current && current !== previewVersionNo) {
+        const stillExists = (document.versions || []).some(
+          (version) => version.versionNo === current
+        );
+        if (stillExists) {
+          return current;
+        }
+      }
+      return fallback;
+    });
+  }, [canCompare, document.versions, previewVersionNo]);
+
+  useEffect(() => {
     if (tab === "version" && document.status !== "published") {
       setTab("preview");
     }
@@ -280,15 +329,13 @@ export default function DocumentPage({
   }, [document.id, previewVersionNo]);
 
   useEffect(() => {
-    if (!filePreview.sheetNames.length) {
+    if (!sheetNames.length) {
       setActiveSheetName("");
       return;
     }
 
-    setActiveSheetName((current) =>
-      filePreview.sheetNames.includes(current) ? current : filePreview.sheetNames[0]
-    );
-  }, [filePreview.sheetNames]);
+    setActiveSheetName((current) => (sheetNames.includes(current) ? current : sheetNames[0]));
+  }, [sheetNames]);
 
   useEffect(() => {
     function handleFullscreenChange() {
@@ -346,6 +393,7 @@ export default function DocumentPage({
         url: null,
         mimeType: null,
         docHtml: "",
+        textLines: [],
         sheetNames: [],
         size: 0,
         loading: true,
@@ -356,70 +404,36 @@ export default function DocumentPage({
         const result = await fetchDocumentFile(token, document.id, previewVersionNo || undefined);
         objectUrl = result.objectUrl;
         const filename = previewFilename(document, previewVersionNo);
-        const nextPreview = {
-          url: result.objectUrl,
+        const parsed = await parseDocumentPreview({
+          blob: result.blob,
           mimeType: result.mimeType,
-          docHtml: "",
-          sheetNames: [],
-          size: result.size || 0,
-          loading: false,
-          error: "",
-        };
-        const canParsePreview = (result.size || 0) <= MAX_PREVIEW_PARSE_BYTES;
-
-        if (isWordFile(filename, result.mimeType) && canParsePreview) {
-          try {
-            const mammoth = await import("mammoth");
-            const arrayBuffer = await result.blob.arrayBuffer();
-            const rendered = await mammoth.convertToHtml(
-              { arrayBuffer },
-              {
-                convertImage: mammoth.images.imgElement(async (image) => {
-                  const imageBuffer = await image.read("base64");
-                  return { src: `data:${image.contentType};base64,${imageBuffer}` };
-                }),
-              }
-            );
-            nextPreview.docHtml = sanitizePreviewHtml(rendered.value);
-          } catch {
-            nextPreview.docHtml = "";
-          }
-        }
-
-        if (isSpreadsheetFile(filename, result.mimeType) && canParsePreview) {
-          try {
-            if (await blobLooksLikeHtml(result.blob)) {
-              const html = await result.blob.text();
-              nextPreview.docHtml = sanitizePreviewHtml(extractHtmlTable(html));
-            } else {
-              const XLSX = await import("xlsx");
-              const arrayBuffer = await result.blob.arrayBuffer();
-              const workbook = XLSX.read(arrayBuffer, {
-                type: "array",
-                cellDates: true,
-              });
-              spreadsheetRef.current = { workbook, xlsx: XLSX };
-              nextPreview.sheetNames = workbook.SheetNames || [];
-            }
-          } catch {
-            spreadsheetRef.current = { workbook: null, xlsx: null };
-            nextPreview.sheetNames = [];
-            nextPreview.docHtml = "";
-          }
-        }
+          size: result.size,
+          filename,
+        });
 
         if (cancelled) {
           URL.revokeObjectURL(objectUrl);
           return;
         }
 
-        setFilePreview(nextPreview);
+        spreadsheetRef.current = { workbook: parsed.workbook, xlsx: parsed.xlsx };
+        setFilePreview({
+          url: result.objectUrl,
+          mimeType: parsed.mimeType,
+          docHtml: parsed.docHtml,
+          textLines: parsed.textLines,
+          sheetNames: parsed.sheetNames,
+          size: parsed.size,
+          loading: false,
+          error: "",
+        });
       } catch (requestError) {
         if (!cancelled) {
           setFilePreview({
             url: null,
             mimeType: null,
             docHtml: "",
+            textLines: [],
             sheetNames: [],
             size: 0,
             loading: false,
@@ -438,6 +452,73 @@ export default function DocumentPage({
       }
     };
   }, [token, document.id, previewVersionNo]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl;
+
+    async function loadCompareFile() {
+      if (!token || !document.id || !compareEnabled || !compareWithVersionNo) {
+        compareSpreadsheetRef.current = { workbook: null, xlsx: null };
+        setComparePreview(emptyComparePreview);
+        return;
+      }
+
+      compareSpreadsheetRef.current = { workbook: null, xlsx: null };
+      setComparePreview({
+        ...emptyComparePreview,
+        loading: true,
+      });
+
+      try {
+        const result = await fetchDocumentFile(token, document.id, compareWithVersionNo);
+        objectUrl = result.objectUrl;
+        const filename = previewFilename(document, compareWithVersionNo);
+        const parsed = await parseDocumentPreview({
+          blob: result.blob,
+          mimeType: result.mimeType,
+          size: result.size,
+          filename,
+        });
+
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        compareSpreadsheetRef.current = { workbook: parsed.workbook, xlsx: parsed.xlsx };
+        setComparePreview({
+          url: result.objectUrl,
+          mimeType: parsed.mimeType,
+          docHtml: parsed.docHtml,
+          textLines: parsed.textLines,
+          sheetNames: parsed.sheetNames,
+          size: parsed.size,
+          loading: false,
+          error: "",
+          name: filename,
+        });
+      } catch (requestError) {
+        if (!cancelled) {
+          compareSpreadsheetRef.current = { workbook: null, xlsx: null };
+          setComparePreview({
+            ...emptyComparePreview,
+            loading: false,
+            error: requestError.message,
+          });
+        }
+      }
+    }
+
+    loadCompareFile();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [token, document.id, compareEnabled, compareWithVersionNo]);
 
   function handleSave(event) {
     event.preventDefault();
@@ -593,6 +674,38 @@ export default function DocumentPage({
                   </button>
                 ))
               )}
+              {canCompare ? (
+                <div className="doc-compare">
+                  <label className="doc-compare-toggle">
+                    <input
+                      type="checkbox"
+                      checked={compareEnabled}
+                      onChange={(event) => setCompareEnabled(event.target.checked)}
+                    />
+                    Показать изменения
+                  </label>
+                  {compareEnabled ? (
+                    <>
+                      <label className="form-field">
+                        Сравнить с
+                        <select
+                          className="field-select"
+                          value={compareWithVersionNo || ""}
+                          onChange={(event) =>
+                            setCompareWithVersionNo(Number(event.target.value) || null)
+                          }
+                        >
+                          {compareVersionOptions.map((version) => (
+                            <option key={version.versionNo} value={version.versionNo}>
+                              {versionLabel(version.versionNo, document.activeVersionNo)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="doc-side-block">
@@ -697,17 +810,109 @@ export default function DocumentPage({
 
           <div className="doc-preview-main">
             <div
-              className={`preview-stage preview-stage-${stageKind}${isFullscreen ? " is-fullscreen" : ""}`}
+              className={`preview-stage preview-stage-${stageKind}${isFullscreen ? " is-fullscreen" : ""}${comparing ? " is-comparing" : ""}`}
               ref={previewStageRef}
               style={{ "--preview-scale": previewScale }}
             >
-              {filePreview.loading ? (
+              {filePreview.loading || (compareEnabled && comparePreview.loading) ? (
                 <div className="preview-empty preview-loading">
                   <span className="preview-spinner" />
-                  Загрузка файла...
+                  {compareEnabled && comparePreview.loading
+                    ? "Сравнение версий..."
+                    : "Загрузка файла..."}
                 </div>
               ) : filePreview.error ? (
                 <div className="preview-empty">{filePreview.error}</div>
+              ) : compareEnabled && comparePreview.error ? (
+                <div className="preview-empty">{comparePreview.error}</div>
+              ) : comparing && lineDiff ? (
+                isSpreadsheetFile(previewFile.name, previewFile.mimeType) && sheetNames.length ? (
+                  <div className="preview-sheet-list is-diff">
+                    <div className="preview-sheet-tabs">
+                      {sheetNames.map((sheetName) => {
+                        const inCurrent = filePreview.sheetNames.includes(sheetName);
+                        const inBase = comparePreview.sheetNames.includes(sheetName);
+                        const sheetClass = [
+                          sheetName === activeSheetName
+                            ? "preview-sheet-tab active"
+                            : "preview-sheet-tab",
+                          comparing && inCurrent && !inBase ? "diff-sheet-add" : "",
+                          comparing && !inCurrent && inBase ? "diff-sheet-del" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
+                        return (
+                          <button
+                            key={sheetName}
+                            type="button"
+                            className={sheetClass}
+                            onClick={() => setActiveSheetName(sheetName)}
+                          >
+                            {sheetName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <DiffViewer
+                      rows={lineDiff.rows}
+                      added={lineDiff.added}
+                      removed={lineDiff.removed}
+                      leftLabel={versionLabel(compareWithVersionNo, document.activeVersionNo)}
+                      rightLabel={previewFile.label}
+                      filename={activeSheetName || previewFile.name}
+                    />
+                  </div>
+                ) : (
+                    <DiffViewer
+                      rows={lineDiff.rows}
+                      added={lineDiff.added}
+                      removed={lineDiff.removed}
+                      leftLabel={versionLabel(compareWithVersionNo, document.activeVersionNo)}
+                      rightLabel={previewFile.label}
+                      filename={previewFile.name}
+                    />
+                )
+              ) : comparing &&
+                previewFile.url &&
+                isImageFile(previewFile.name, previewFile.mimeType) ? (
+                <div className="preview-compare-split">
+                  <figure>
+                    <figcaption>
+                      {versionLabel(compareWithVersionNo, document.activeVersionNo)}
+                    </figcaption>
+                    {comparePreview.url ? (
+                      <img src={comparePreview.url} alt={comparePreview.name} />
+                    ) : (
+                      <div className="preview-empty">Нет файла базовой версии</div>
+                    )}
+                  </figure>
+                  <figure>
+                    <figcaption>{previewFile.label}</figcaption>
+                    <img src={previewFile.url} alt={previewFile.name} />
+                  </figure>
+                </div>
+              ) : comparing &&
+                previewFile.url &&
+                isPdfFile(previewFile.name, previewFile.mimeType) ? (
+                <div className="preview-compare-split">
+                  <figure>
+                    <figcaption>
+                      {versionLabel(compareWithVersionNo, document.activeVersionNo)}
+                    </figcaption>
+                    {comparePreview.url ? (
+                      <iframe
+                        title={comparePreview.name}
+                        src={pdfViewerSrc(comparePreview.url)}
+                      />
+                    ) : (
+                      <div className="preview-empty">Нет файла базовой версии</div>
+                    )}
+                  </figure>
+                  <figure>
+                    <figcaption>{previewFile.label}</figcaption>
+                    <iframe title={previewFile.name} src={pdfViewerSrc(previewFile.url)} />
+                  </figure>
+                </div>
               ) : previewFile.url && isImageFile(previewFile.name, previewFile.mimeType) ? (
                 <img src={previewFile.url} alt={previewFile.name} />
               ) : previewFile.url && isPdfFile(previewFile.name, previewFile.mimeType) ? (
@@ -724,10 +929,10 @@ export default function DocumentPage({
                   <div className="preview-empty">Не удалось подготовить предпросмотр Word.</div>
                 )
               ) : previewFile.url && isSpreadsheetFile(previewFile.name, previewFile.mimeType) ? (
-                filePreview.sheetNames.length ? (
+                sheetNames.length ? (
                   <div className="preview-sheet-list">
                     <div className="preview-sheet-tabs">
-                      {filePreview.sheetNames.map((sheetName) => (
+                      {sheetNames.map((sheetName) => (
                         <button
                           key={sheetName}
                           type="button"
