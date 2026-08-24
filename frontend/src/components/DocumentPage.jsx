@@ -610,15 +610,20 @@ export default function DocumentPage({
                 </div>
               ))}
             </div>
-          </aside>
 
-          <div className="doc-preview-main">
-            <div className="preview-toolbar">
-              <strong>{previewFile.label}</strong>
-              <span className="preview-filename">{previewFile.name || "Файл не найден"}</span>
+            <div className="doc-side-block doc-side-actions">
+              <div className="doc-side-title">Файл</div>
+              <div className="doc-side-row">
+                <span>{previewFile.label}</span>
+                <strong className="preview-filename">{previewFile.name || "Файл не найден"}</strong>
+              </div>
               {filePreview.size ? (
-                <span className="preview-filesize">{formatFileSize(filePreview.size)}</span>
+                <div className="doc-side-row">
+                  <span>Размер</span>
+                  <strong>{formatFileSize(filePreview.size)}</strong>
+                </div>
               ) : null}
+
               {canZoom && !filePreview.loading && previewFile.url ? (
                 <div className="preview-zoom">
                   <button type="button" onClick={() => adjustPreviewScale(-0.25)} aria-label="Уменьшить">
@@ -630,18 +635,67 @@ export default function DocumentPage({
                   </button>
                 </div>
               ) : null}
-              {previewFile.url ? (
-                <button className="btn cancel" type="button" onClick={toggleFullscreen}>
-                  {isFullscreen ? "Свернуть" : "На весь экран"}
-                </button>
-              ) : null}
-              {previewFile.url ? (
-                <a className="btn cancel" href={previewFile.url} download={previewFile.name || true}>
-                  Скачать файл
-                </a>
-              ) : null}
-            </div>
 
+              <div className="doc-actions">
+                {previewFile.url ? (
+                  <button className="btn cancel" type="button" onClick={toggleFullscreen}>
+                    {isFullscreen ? "Свернуть" : "На весь экран"}
+                  </button>
+                ) : null}
+                {previewFile.url ? (
+                  <a className="btn cancel" href={previewFile.url} download={previewFile.name || true}>
+                    Скачать файл
+                  </a>
+                ) : null}
+                {isTrash && isResponsible ? (
+                  <>
+                    <button
+                      className="btn primary"
+                      type="button"
+                      disabled={loading}
+                      onClick={() => onRestore(document.id)}
+                    >
+                      Восстановить
+                    </button>
+                    <button
+                      className="btn danger-text"
+                      type="button"
+                      disabled={loading}
+                      onClick={() => onPermanentDelete(document.id)}
+                    >
+                      Удалить безвозвратно
+                    </button>
+                  </>
+                ) : null}
+                {!isTrash && isResponsible && document.status === "draft" ? (
+                  <button className="btn primary" type="button" onClick={() => onPublish(document.id)}>
+                    Опубликовать
+                  </button>
+                ) : null}
+                {!isTrash && isResponsible && document.status === "archived" ? (
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={loading}
+                    onClick={() => onUnarchive(document.id)}
+                  >
+                    Вернуть из архива
+                  </button>
+                ) : null}
+                {!isTrash && !isResponsible && !document.isAcknowledged ? (
+                  <button
+                    className="btn primary"
+                    type="button"
+                    onClick={() => onAcknowledge(document.id, document.activeVersionNo)}
+                  >
+                    Ознакомлен
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </aside>
+
+          <div className="doc-preview-main">
             <div
               className={`preview-stage preview-stage-${stageKind}${isFullscreen ? " is-fullscreen" : ""}`}
               ref={previewStageRef}
@@ -717,53 +771,6 @@ export default function DocumentPage({
               ) : (
                 <div className="preview-empty">Файл еще не загружен.</div>
               )}
-            </div>
-
-            <div className="doc-actions">
-              {isTrash && isResponsible ? (
-                <>
-                  <button
-                    className="btn primary"
-                    type="button"
-                    disabled={loading}
-                    onClick={() => onRestore(document.id)}
-                  >
-                    Восстановить
-                  </button>
-                  <button
-                    className="btn danger-text"
-                    type="button"
-                    disabled={loading}
-                    onClick={() => onPermanentDelete(document.id)}
-                  >
-                    Удалить безвозвратно
-                  </button>
-                </>
-              ) : null}
-              {!isTrash && isResponsible && document.status === "draft" ? (
-                <button className="btn primary" type="button" onClick={() => onPublish(document.id)}>
-                  Опубликовать
-                </button>
-              ) : null}
-              {!isTrash && isResponsible && document.status === "archived" ? (
-                <button
-                  className="btn primary"
-                  type="button"
-                  disabled={loading}
-                  onClick={() => onUnarchive(document.id)}
-                >
-                  Вернуть из архива
-                </button>
-              ) : null}
-              {!isTrash && !isResponsible && !document.isAcknowledged ? (
-                <button
-                  className="btn primary"
-                  type="button"
-                  onClick={() => onAcknowledge(document.id, document.activeVersionNo)}
-                >
-                  Ознакомлен
-                </button>
-              ) : null}
             </div>
           </div>
         </div>
