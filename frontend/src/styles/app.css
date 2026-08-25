@@ -614,7 +614,7 @@ textarea::placeholder {
   padding: 8px 10px;
   display: grid;
   gap: 6px;
-  max-height: 180px;
+  align-content: start;
   overflow: auto;
   background: #fafcfe;
 }
@@ -1776,9 +1776,8 @@ a {
   min-height: 0;
 }
 
-/* Оба открыты: делят место пополам, каждый со своим скроллом */
-.doc-requisites-grid.is-docs-open.is-access-open .doc-collapse-docs.is-open,
-.doc-requisites-grid.is-docs-open.is-access-open .doc-collapse-access.is-open {
+/* Оба открыты: документы занимают оставшееся место и скроллятся */
+.doc-requisites-grid.is-docs-open.is-access-open .doc-collapse-docs.is-open {
   flex: 1 1 0;
   min-height: 0;
 }
@@ -1788,35 +1787,38 @@ a {
   overflow: auto;
 }
 
-/* Только доступ: занимает всё свободное место снизу */
-.doc-requisites-grid.is-access-open:not(.is-docs-open) .doc-collapse-access.is-open {
+.doc-collapse-access.is-open .doc-collapse-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-requisites-grid.is-access-open:not(.is-docs-open) .doc-collapse-access.is-open.has-many-users {
   flex: 1 1 auto;
   min-height: 0;
 }
 
-.doc-collapse-access.is-open .doc-collapse-body {
+.doc-requisites-grid.is-docs-open.is-access-open .doc-collapse-access.is-open.has-many-users {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.doc-collapse-access.is-open.has-many-users .doc-collapse-body {
   flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
-.doc-collapse-access.is-open .access-summary-field {
+.doc-collapse-access.is-open.has-many-users .access-summary-field {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.doc-collapse-access.is-open .access-summary-list {
+.doc-collapse-access.is-open.has-many-users .access-summary-list {
   flex: 1 1 auto;
-  min-height: 72px;
-  max-height: none;
-  overflow: auto;
-}
-
-.doc-requisites-grid.is-access-open:not(.is-docs-open) .doc-collapse-access.is-open .access-summary-list {
   min-height: 120px;
+  max-height: none;
 }
 
 .doc-page-left .doc-form .form-field {

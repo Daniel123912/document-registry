@@ -27,6 +27,8 @@ const emptyVersionForm = {
   versionFile: null,
 };
 
+const ACCESS_SUMMARY_EXPAND_AT = 5;
+
 const emptyComparePreview = {
   url: null,
   mimeType: null,
@@ -123,6 +125,7 @@ export default function DocumentPage({
   const selectedAccessUsers = employeeUsers.filter((candidate) =>
     editForm.assignedUsers.includes(candidate.id)
   );
+  const accessSummaryExpanded = selectedAccessUsers.length >= ACCESS_SUMMARY_EXPAND_AT;
   const folderOptions = flattenFoldersForSelect(folders, editForm.type);
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
   const ackDone = document.acknowledgedCount || 0;
@@ -942,7 +945,14 @@ export default function DocumentPage({
                 </section>
 
                 <section
-                  className={`doc-collapse doc-collapse-access${requisitesOpen.access ? " is-open" : ""}`}
+                  className={[
+                    "doc-collapse",
+                    "doc-collapse-access",
+                    requisitesOpen.access ? "is-open" : "",
+                    accessSummaryExpanded ? "has-many-users" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 >
                   <button
                     type="button"
