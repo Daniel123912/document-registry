@@ -108,7 +108,7 @@ function App() {
 
   const listTitle = useMemo(() => {
     if (section === "inbox") {
-      return "Список документов: Мои документы";
+      return "На ознакомление";
     }
     if (section === "report") {
       return "Отчет по ознакомлению";
@@ -151,8 +151,7 @@ function App() {
       return rows;
     }
 
-    const source =
-      section === "inbox" || !isResponsible ? assignedDocuments : documents;
+    const source = section === "inbox" ? assignedDocuments : documents;
 
     let rows = source.filter((document) => {
       if (section === "archive") {
@@ -197,7 +196,6 @@ function App() {
     activeType,
     assignedDocuments,
     documents,
-    isResponsible,
     search,
     section,
     sort,
@@ -214,7 +212,7 @@ function App() {
 
     try {
       const requests = [
-        fetchDocuments(currentToken, currentUser.role === "responsible" ? "all" : "mine"),
+        fetchDocuments(currentToken, "all"),
         fetchAssignedDocuments(currentToken),
         fetchFolders(currentToken),
       ];
@@ -250,12 +248,6 @@ function App() {
       loadData();
     }
   }, [token]);
-
-  useEffect(() => {
-    if (!isResponsible) {
-      setSection("inbox");
-    }
-  }, [isResponsible]);
 
   useEffect(() => {
     if (!notice) {

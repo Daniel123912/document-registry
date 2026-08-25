@@ -797,7 +797,7 @@ export default function DocumentPage({
                       Вернуть из архива
                     </button>
                   ) : null}
-                  {!isTrash && !isResponsible && !document.isAcknowledged ? (
+                  {!isTrash && !isResponsible && document.isAssigned && !document.isAcknowledged ? (
                     <button
                       className="btn primary"
                       type="button"
@@ -956,13 +956,13 @@ export default function DocumentPage({
                     }
                   >
                     <span className={`chevron${requisitesOpen.access ? " open" : ""}`} />
-                    Доступ
+                    Уведомления
                   </button>
                   {requisitesOpen.access ? (
                     <div className="doc-collapse-body">
                       <div className="form-field access-summary-field">
                         <div className="access-summary-head">
-                          <span>Сотрудники для ознакомления</span>
+                          <span>Кому отправить уведомление</span>
                           <button
                             className="btn cancel access-edit-btn"
                             type="button"

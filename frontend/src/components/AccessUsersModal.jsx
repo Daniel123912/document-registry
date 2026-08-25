@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 export default function AccessUsersModal({
   employeeUsers = [],
   selectedIds = [],
-  title = "Сотрудники для ознакомления",
-  description = "Выберите пользователей, которые получат уведомление о документе.",
+  title = "Уведомления",
+  description = "Выберите сотрудников, которые получат уведомление и должны ознакомиться с документом. Все сотрудники по-прежнему видят документ в реестре.",
   confirmLabel = "Сохранить",
   cancelLabel = "Отмена",
   onClose,

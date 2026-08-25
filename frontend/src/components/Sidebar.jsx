@@ -260,7 +260,7 @@ export default function Sidebar({
           className={section === "inbox" ? "nav-item active" : "nav-item"}
           onClick={onInbox}
         >
-          Мои документы
+          На ознакомление
         </button>
 
         <div className="nav-tree">

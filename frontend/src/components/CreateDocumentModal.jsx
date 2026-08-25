@@ -109,7 +109,7 @@ export default function CreateDocumentModal({
             </label>
 
             <div className="form-field">
-              <span>Сотрудники для ознакомления</span>
+              <span>Кому отправить уведомление</span>
               <div className="users-toolbar">
                 <button
                   className="link-btn"

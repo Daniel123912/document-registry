@@ -42,7 +42,9 @@ async function listDocuments({ userId, role, onlyAssigned, trash = false }) {
       whereParts.push("d.status = 'published'");
       whereParts.push("current_assignment.user_id IS NOT NULL");
     } else if (role !== "responsible") {
-      whereParts.push("d.author_id = $1");
+      // All employees can browse published/archived documents;
+      // document_assignments only control notifications / acknowledgement.
+      whereParts.push("d.status IN ('published', 'archived')");
     }
   }
 
@@ -61,7 +63,11 @@ async function listDocuments({ userId, role, onlyAssigned, trash = false }) {
       CASE
         WHEN ack_self.user_id IS NULL THEN FALSE
         ELSE TRUE
-      END AS is_acknowledged
+      END AS is_acknowledged,
+      CASE
+        WHEN current_assignment.user_id IS NULL THEN FALSE
+        ELSE TRUE
+      END AS is_assigned
     FROM documents d
     JOIN users u ON u.id = d.author_id
     LEFT JOIN (
@@ -781,22 +787,13 @@ async function assertCanAccessDocument({ document, userId, role }) {
     return;
   }
 
-  if (document.status === "draft") {
-    throw httpError(403, "Недостаточно прав.");
+  // Published and archived documents are visible to all employees.
+  // Assignments only gate notifications / acknowledgement, not viewing.
+  if (document.status === "published" || document.status === "archived") {
+    return;
   }
 
-  const assignment = await query(
-    `
-      SELECT 1
-      FROM document_assignments
-      WHERE document_id = $1 AND user_id = $2
-    `,
-    [document.id, userId]
-  );
-
-  if (!assignment.rows.length) {
-    throw httpError(403, "Недостаточно прав.");
-  }
+  throw httpError(403, "Недостаточно прав.");
 }
 
 async function getDocumentFile({ documentId, versionNo, userId, role, allowDeleted = false }) {
