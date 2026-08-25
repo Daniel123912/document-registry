@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fetchDocumentFile } from "../api/client";
-import { TYPE_OPTIONS, typeLabel } from "../constants";
+import { TYPE_OPTIONS } from "../constants";
 import {
   buildLineDiff,
   htmlToLines,
   previousVersionNo,
   sheetToLines,
 } from "../utils/documentDiff";
+import AccessUsersModal from "./AccessUsersModal";
 import DiffViewer from "./DiffViewer";
 import { formatDate, toIsoDateValue, daysUntilTrashPurge } from "../utils/dates";
 import {
@@ -37,20 +38,6 @@ const emptyComparePreview = {
   error: "",
   name: "",
 };
-
-function formatFileSize(bytes) {
-  const size = Number(bytes);
-  if (!Number.isFinite(size) || size <= 0) {
-    return "";
-  }
-  if (size < 1024) {
-    return `${size} Б`;
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} КБ`;
-  }
-  return `${(size / (1024 * 1024)).toFixed(1)} МБ`;
-}
 
 function pdfViewerSrc(url) {
   return url ? `${url}#toolbar=1&navpanes=0` : "";
@@ -111,6 +98,11 @@ export default function DocumentPage({
     folderId: document.folderId == null ? "" : String(document.folderId),
   });
   const [versionForm, setVersionForm] = useState(emptyVersionForm);
+  const [requisitesOpen, setRequisitesOpen] = useState({
+    documents: false,
+    access: false,
+  });
+  const [accessModalOpen, setAccessModalOpen] = useState(false);
   const [versionMenu, setVersionMenu] = useState(null);
   const versionMenuRef = useRef(null);
   const [filePreview, setFilePreview] = useState({
@@ -127,6 +119,9 @@ export default function DocumentPage({
 
   const employeeUsers = (Array.isArray(users) ? users : []).filter(
     (candidate) => candidate.role === "employee"
+  );
+  const selectedAccessUsers = employeeUsers.filter((candidate) =>
+    editForm.assignedUsers.includes(candidate.id)
   );
   const folderOptions = flattenFoldersForSelect(folders, editForm.type);
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
@@ -522,6 +517,10 @@ export default function DocumentPage({
 
   function handleSave(event) {
     event.preventDefault();
+    if (!String(editForm.title || "").trim() || !editForm.documentDate) {
+      setRequisitesOpen((current) => ({ ...current, documents: true }));
+      return;
+    }
     onSaveRequisites(document.id, {
       title: editForm.title,
       type: editForm.type,
@@ -578,114 +577,114 @@ export default function DocumentPage({
 
   return (
     <section className="doc-page">
-      <header className="doc-page-head">
-        <div>
-          <h2 className="doc-page-title">{document.title}</h2>
-          <div className="doc-page-meta">
-            № {document.number || "без номера"} Тип: {typeLabel(document.type)} Дата:{" "}
-            {formatDate(document.documentDate)}
-          </div>
-        </div>
-        <button className="btn cancel" type="button" onClick={onClose}>
-          Закрыть
-        </button>
-      </header>
+      <div className="doc-page-layout">
+        <div className="doc-page-left">
+          <header className="doc-page-head">
+            <button
+              className="doc-page-close"
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть"
+              title="Закрыть"
+            >
+              ×
+            </button>
+            <h2 className="doc-page-title">{document.title}</h2>
+          </header>
 
-      {notice ? <div className="alert success">{notice}</div> : null}
-      {error ? <div className="alert error">{error}</div> : null}
+          {notice ? <div className="alert success">{notice}</div> : null}
+          {error ? <div className="alert error">{error}</div> : null}
 
-      {isTrash ? (
-        <div className="alert warn">
-          Документ в корзине. Осталось {daysUntilTrashPurge(document.deletedAt)} дн. до
-          безвозвратного удаления.
-        </div>
-      ) : null}
-
-      <div className="doc-tabs">
-        <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
-          Просмотр
-        </button>
-        {isResponsible && !isTrash ? (
-          <button
-            className={tab === "requisites" ? "active" : ""}
-            onClick={() => setTab("requisites")}
-          >
-            Реквизиты
-          </button>
-        ) : null}
-        {isResponsible && !isTrash && document.status === "published" ? (
-          <button className={tab === "version" ? "active" : ""} onClick={() => setTab("version")}>
-            Новая версия
-          </button>
-        ) : null}
-      </div>
-
-      {tab === "preview" ? (
-        <div className="doc-preview">
-          <aside className="doc-preview-side">
-            <div className="doc-side-block">
-              <div className="doc-side-title">Основное</div>
-              <div className="doc-side-row">
-                <span>Автор</span>
-                <strong>{document.authorName}</strong>
-              </div>
-              <div className="doc-side-row">
-                <span>Обновлено</span>
-                <strong>{formatDate(document.updatedAt)}</strong>
-              </div>
-              {document.description ? (
-                <div className="doc-side-row">
-                  <span>Описание</span>
-                  <strong>{document.description}</strong>
-                </div>
-              ) : null}
+          {isTrash ? (
+            <div className="alert warn">
+              Документ в корзине. Осталось {daysUntilTrashPurge(document.deletedAt)} дн. до
+              безвозвратного удаления.
             </div>
+          ) : null}
 
-            <div className="doc-side-block">
-              <div className="doc-side-title">Версии</div>
-              {(document.versions || []).length === 0 ? (
-                <button
-                  type="button"
-                  className="version-chip active"
-                  onClick={() => setPreviewVersionNo(0)}
-                >
-                  Черновик
-                </button>
-              ) : (
-                (document.versions || []).map((version) => (
+          <div className="doc-tabs">
+            <button className={tab === "preview" ? "active" : ""} onClick={() => setTab("preview")}>
+              Просмотр
+            </button>
+            {isResponsible && !isTrash ? (
+              <button
+                className={tab === "requisites" ? "active" : ""}
+                onClick={() => setTab("requisites")}
+              >
+                Реквизиты
+              </button>
+            ) : null}
+            {isResponsible && !isTrash && document.status === "published" ? (
+              <button className={tab === "version" ? "active" : ""} onClick={() => setTab("version")}>
+                Новая версия
+              </button>
+            ) : null}
+          </div>
+
+          {tab === "preview" ? (
+            <>
+            <aside className="doc-preview-side">
+              <div className="doc-side-block">
+                <div className="doc-side-meta-line">
+                  <span>
+                    Автор <strong>{document.authorName}</strong>
+                  </span>
+                  <span>
+                    Обновлено <strong>{formatDate(document.updatedAt)}</strong>
+                  </span>
+                </div>
+                {document.description ? (
+                  <div className="doc-side-row doc-side-description">
+                    <span>Описание</span>
+                    <strong>{document.description}</strong>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="doc-side-block">
+                <div className="doc-side-title">Версии</div>
+                {(document.versions || []).length === 0 ? (
                   <button
-                    key={version.versionNo}
                     type="button"
-                    className={
-                      previewVersionNo === version.versionNo ? "version-chip active" : "version-chip"
-                    }
-                    onClick={() => setPreviewVersionNo(version.versionNo)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      if (canManageVersions) {
-                        openVersionMenu(event, version);
-                      }
-                    }}
+                    className="version-chip active"
+                    onClick={() => setPreviewVersionNo(0)}
                   >
-                    <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
-                    {version.changeReason ? (
-                      <small>{version.changeReason}</small>
-                    ) : null}
+                    Черновик
                   </button>
-                ))
-              )}
-              {canCompare ? (
-                <div className="doc-compare">
-                  <label className="doc-compare-toggle">
-                    <input
-                      type="checkbox"
-                      checked={compareEnabled}
-                      onChange={(event) => setCompareEnabled(event.target.checked)}
-                    />
-                    Показать изменения
-                  </label>
-                  {compareEnabled ? (
-                    <>
+                ) : (
+                  (document.versions || []).map((version) => (
+                    <button
+                      key={version.versionNo}
+                      type="button"
+                      className={
+                        previewVersionNo === version.versionNo
+                          ? "version-chip active"
+                          : "version-chip"
+                      }
+                      onClick={() => setPreviewVersionNo(version.versionNo)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (canManageVersions) {
+                          openVersionMenu(event, version);
+                        }
+                      }}
+                    >
+                      <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
+                      {version.changeReason ? <small>{version.changeReason}</small> : null}
+                    </button>
+                  ))
+                )}
+                {canCompare ? (
+                  <div className="doc-compare">
+                    <label className="doc-compare-toggle">
+                      <input
+                        type="checkbox"
+                        checked={compareEnabled}
+                        onChange={(event) => setCompareEnabled(event.target.checked)}
+                      />
+                      Показать изменения
+                    </label>
+                    {compareEnabled ? (
                       <label className="form-field">
                         Сравнить с
                         <select
@@ -702,92 +701,311 @@ export default function DocumentPage({
                           ))}
                         </select>
                       </label>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="doc-side-block">
+                <div className="doc-side-title">Ознакомление</div>
+                <div className="ack-progress">
+                  <div className="ack-progress-bar" style={{ width: `${ackPercent}%` }} />
+                </div>
+                <div className="ack-progress-label">
+                  {ackDone} из {ackTotal}
+                </div>
+                {(document.assignedUsers || []).map((user) => (
+                  <div className="ack-user" key={user.id}>
+                    <span>{user.fullName}</span>
+                    {user.isAcknowledged ? <span className="ack-check">✓</span> : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className="doc-side-block doc-side-actions">
+                {canZoom && !filePreview.loading && previewFile.url ? (
+                  <div className="preview-zoom">
+                    <button
+                      type="button"
+                      onClick={() => adjustPreviewScale(-0.25)}
+                      aria-label="Уменьшить"
+                    >
+                      −
+                    </button>
+                    <span>{Math.round(previewScale * 100)}%</span>
+                    <button
+                      type="button"
+                      onClick={() => adjustPreviewScale(0.25)}
+                      aria-label="Увеличить"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="doc-actions">
+                  {previewFile.url ? (
+                    <button className="btn cancel" type="button" onClick={toggleFullscreen}>
+                      {isFullscreen ? "Свернуть" : "На весь экран"}
+                    </button>
+                  ) : null}
+                  {previewFile.url ? (
+                    <a
+                      className="btn cancel"
+                      href={previewFile.url}
+                      download={previewFile.name || true}
+                    >
+                      Скачать файл
+                    </a>
+                  ) : null}
+                  {isTrash && isResponsible ? (
+                    <>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        disabled={loading}
+                        onClick={() => onRestore(document.id)}
+                      >
+                        Восстановить
+                      </button>
+                      <button
+                        className="btn danger-text"
+                        type="button"
+                        disabled={loading}
+                        onClick={() => onPermanentDelete(document.id)}
+                      >
+                        Удалить безвозвратно
+                      </button>
                     </>
                   ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="doc-side-block">
-              <div className="doc-side-title">Ознакомление</div>
-              <div className="ack-progress">
-                <div className="ack-progress-bar" style={{ width: `${ackPercent}%` }} />
-              </div>
-              <div className="ack-progress-label">
-                {ackDone} из {ackTotal}
-              </div>
-              {(document.assignedUsers || []).map((user) => (
-                <div className="ack-user" key={user.id}>
-                  <span>{user.fullName}</span>
-                  {user.isAcknowledged ? <span className="ack-check">✓</span> : null}
-                </div>
-              ))}
-            </div>
-
-            <div className="doc-side-block doc-side-actions">
-              <div className="doc-side-title">Файл</div>
-              <div className="doc-side-row">
-                <span>{previewFile.label}</span>
-                <strong className="preview-filename">{previewFile.name || "Файл не найден"}</strong>
-              </div>
-              {filePreview.size ? (
-                <div className="doc-side-row">
-                  <span>Размер</span>
-                  <strong>{formatFileSize(filePreview.size)}</strong>
-                </div>
-              ) : null}
-
-              {canZoom && !filePreview.loading && previewFile.url ? (
-                <div className="preview-zoom">
-                  <button type="button" onClick={() => adjustPreviewScale(-0.25)} aria-label="Уменьшить">
-                    −
-                  </button>
-                  <span>{Math.round(previewScale * 100)}%</span>
-                  <button type="button" onClick={() => adjustPreviewScale(0.25)} aria-label="Увеличить">
-                    +
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="doc-actions">
-                {previewFile.url ? (
-                  <button className="btn cancel" type="button" onClick={toggleFullscreen}>
-                    {isFullscreen ? "Свернуть" : "На весь экран"}
-                  </button>
-                ) : null}
-                {previewFile.url ? (
-                  <a className="btn cancel" href={previewFile.url} download={previewFile.name || true}>
-                    Скачать файл
-                  </a>
-                ) : null}
-                {isTrash && isResponsible ? (
-                  <>
+                  {!isTrash && isResponsible && document.status === "draft" ? (
+                    <button
+                      className="btn primary"
+                      type="button"
+                      onClick={() => onPublish(document.id)}
+                    >
+                      Опубликовать
+                    </button>
+                  ) : null}
+                  {!isTrash && isResponsible && document.status === "archived" ? (
                     <button
                       className="btn primary"
                       type="button"
                       disabled={loading}
-                      onClick={() => onRestore(document.id)}
+                      onClick={() => onUnarchive(document.id)}
                     >
-                      Восстановить
+                      Вернуть из архива
                     </button>
+                  ) : null}
+                  {!isTrash && !isResponsible && !document.isAcknowledged ? (
                     <button
-                      className="btn danger-text"
+                      className="btn primary"
                       type="button"
-                      disabled={loading}
-                      onClick={() => onPermanentDelete(document.id)}
+                      onClick={() => onAcknowledge(document.id, document.activeVersionNo)}
                     >
-                      Удалить безвозвратно
+                      Ознакомлен
                     </button>
-                  </>
-                ) : null}
-                {!isTrash && isResponsible && document.status === "draft" ? (
-                  <button className="btn primary" type="button" onClick={() => onPublish(document.id)}>
-                    Опубликовать
+                  ) : null}
+                </div>
+              </div>
+            </aside>
+            </>
+          ) : null}
+
+          {tab === "requisites" && isResponsible && !isTrash ? (
+            <form className="doc-form" onSubmit={handleSave}>
+              <div className="form-grid doc-requisites-grid">
+                <section className="doc-collapse">
+                  <button
+                    type="button"
+                    className="doc-collapse-toggle"
+                    aria-expanded={requisitesOpen.documents}
+                    onClick={() =>
+                      setRequisitesOpen((current) => ({
+                        ...current,
+                        documents: !current.documents,
+                      }))
+                    }
+                  >
+                    <span className={`chevron${requisitesOpen.documents ? " open" : ""}`} />
+                    Документы
+                  </button>
+                  {requisitesOpen.documents ? (
+                    <div className="doc-collapse-body">
+                      <label className="form-field">
+                        Тип документа
+                        <select
+                          className="field-select"
+                          value={editForm.type}
+                          onChange={(event) =>
+                            setEditForm((current) => ({
+                              ...current,
+                              type: event.target.value,
+                              folderId: "",
+                            }))
+                          }
+                        >
+                          {TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="form-field">
+                        Номер
+                        <input
+                          className="field-input"
+                          value={editForm.number}
+                          onChange={(event) =>
+                            setEditForm((current) => ({ ...current, number: event.target.value }))
+                          }
+                        />
+                      </label>
+
+                      <label className="form-field">
+                        Папка
+                        <select
+                          className="field-select"
+                          value={editForm.folderId || ""}
+                          onChange={(event) =>
+                            setEditForm((current) => ({
+                              ...current,
+                              folderId: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Выберите папку</option>
+                          {folderOptions.map((folder) => (
+                            <option key={folder.id} value={folder.id}>
+                              {folder.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="form-field">
+                        Название документа
+                        <input
+                          className="field-input"
+                          value={editForm.title}
+                          onChange={(event) =>
+                            setEditForm((current) => ({ ...current, title: event.target.value }))
+                          }
+                          required
+                        />
+                      </label>
+
+                      <label className="form-field">
+                        Описание
+                        <textarea
+                          rows="3"
+                          value={editForm.description}
+                          onChange={(event) =>
+                            setEditForm((current) => ({
+                              ...current,
+                              description: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+
+                      <label className="form-field">
+                        Дата документа
+                        <input
+                          className="field-input"
+                          type="date"
+                          value={editForm.documentDate}
+                          onChange={(event) =>
+                            setEditForm((current) => ({
+                              ...current,
+                              documentDate: event.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </section>
+
+                <section className="doc-collapse">
+                  <button
+                    type="button"
+                    className="doc-collapse-toggle"
+                    aria-expanded={requisitesOpen.access}
+                    onClick={() =>
+                      setRequisitesOpen((current) => ({
+                        ...current,
+                        access: !current.access,
+                      }))
+                    }
+                  >
+                    <span className={`chevron${requisitesOpen.access ? " open" : ""}`} />
+                    Доступ
+                  </button>
+                  {requisitesOpen.access ? (
+                    <div className="doc-collapse-body">
+                      <div className="form-field">
+                        <div className="access-summary-head">
+                          <span>Сотрудники для ознакомления</span>
+                          <button
+                            className="btn cancel access-edit-btn"
+                            type="button"
+                            onClick={() => setAccessModalOpen(true)}
+                          >
+                            Редактировать
+                          </button>
+                        </div>
+                        <div className="access-summary-list">
+                          {selectedAccessUsers.length > 0 ? (
+                            selectedAccessUsers.map((user) => (
+                              <div className="access-summary-item" key={user.id}>
+                                <span>{user.fullName}</span>
+                                <span className="muted">{user.email}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="muted">Никто не выбран</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+
+              <div className="doc-form-actions">
+                <button className="btn primary" type="submit" disabled={loading}>
+                  {loading ? "Сохранение..." : "Сохранить"}
+                </button>
+                <button
+                  className="btn cancel"
+                  type="button"
+                  onClick={() => {
+                    setEditForm({
+                      title: document.title || "",
+                      type: document.type,
+                      number: document.number || "",
+                      documentDate: toIsoDateValue(document.documentDate),
+                      description: document.description || "",
+                      assignedUsers: (document.assignedUsers || []).map((user) => user.id),
+                      folderId: document.folderId == null ? "" : String(document.folderId),
+                    });
+                    setTab("preview");
+                  }}
+                >
+                  Отмена
+                </button>
+                {document.status === "published" ? (
+                  <button className="btn cancel" type="button" onClick={() => onArchive(document.id)}>
+                    В архив
                   </button>
                 ) : null}
-                {!isTrash && isResponsible && document.status === "archived" ? (
+                {document.status === "archived" ? (
                   <button
-                    className="btn primary"
+                    className="btn cancel"
                     type="button"
                     disabled={loading}
                     onClick={() => onUnarchive(document.id)}
@@ -795,20 +1013,57 @@ export default function DocumentPage({
                     Вернуть из архива
                   </button>
                 ) : null}
-                {!isTrash && !isResponsible && !document.isAcknowledged ? (
-                  <button
-                    className="btn primary"
-                    type="button"
-                    onClick={() => onAcknowledge(document.id, document.activeVersionNo)}
-                  >
-                    Ознакомлен
-                  </button>
-                ) : null}
+                <button className="btn danger-text" type="button" onClick={() => onDelete(document.id)}>
+                  Удалить документ
+                </button>
               </div>
-            </div>
-          </aside>
+            </form>
+          ) : null}
 
-          <div className="doc-preview-main">
+          {tab === "version" && isResponsible && !isTrash && document.status === "published" ? (
+            <form className="doc-form" onSubmit={handleNewVersion}>
+              <div className="form-grid">
+                <label className="form-field">
+                  Причина новой версии
+                  <textarea
+                    rows="3"
+                    placeholder="Что изменилось в новой версии"
+                    value={versionForm.changeReason}
+                    onChange={(event) =>
+                      setVersionForm((current) => ({ ...current, changeReason: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+                <label className="form-field">
+                  Файл новой версии
+                  <input
+                    className="file-input"
+                    type="file"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
+                    onChange={(event) =>
+                      setVersionForm((current) => ({
+                        ...current,
+                        versionFile: event.target.files?.[0] || null,
+                      }))
+                    }
+                    required
+                  />
+                </label>
+              </div>
+              <div className="doc-form-actions">
+                <button className="btn primary" type="submit" disabled={loading}>
+                  {loading ? "Сохранение..." : "Создать версию"}
+                </button>
+                <button className="btn cancel" type="button" onClick={() => setTab("preview")}>
+                  Отмена
+                </button>
+              </div>
+            </form>
+          ) : null}
+        </div>
+
+        <div className="doc-preview-main">
             <div
               className={`preview-stage preview-stage-${stageKind}${isFullscreen ? " is-fullscreen" : ""}${comparing ? " is-comparing" : ""}`}
               ref={previewStageRef}
@@ -977,233 +1232,8 @@ export default function DocumentPage({
                 <div className="preview-empty">Файл еще не загружен.</div>
               )}
             </div>
-          </div>
         </div>
-      ) : null}
-
-      {tab === "requisites" && isResponsible && !isTrash ? (
-        <form className="doc-form" onSubmit={handleSave}>
-          <div className="form-grid">
-            <div className="form-row equal">
-              <label className="form-field">
-                Тип документа
-                <select
-                  className="field-select"
-                  value={editForm.type}
-                  onChange={(event) =>
-                    setEditForm((current) => ({
-                      ...current,
-                      type: event.target.value,
-                      folderId: "",
-                    }))
-                  }
-                >
-                  {TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-field">
-                Номер
-                <input
-                  className="field-input"
-                  value={editForm.number}
-                  onChange={(event) =>
-                    setEditForm((current) => ({ ...current, number: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-
-            <label className="form-field">
-              Папка
-              <select
-                className="field-select"
-                value={editForm.folderId || ""}
-                onChange={(event) =>
-                  setEditForm((current) => ({
-                    ...current,
-                    folderId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">Выберите папку</option>
-                {folderOptions.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="form-field">
-              Название документа
-              <input
-                className="field-input"
-                value={editForm.title}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, title: event.target.value }))
-                }
-                required
-              />
-            </label>
-
-            <label className="form-field">
-              Дата документа
-              <input
-                className="field-input"
-                type="date"
-                value={editForm.documentDate}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, documentDate: event.target.value }))
-                }
-                required
-              />
-            </label>
-
-            <div className="form-field">
-              <span>Сотрудники для ознакомления</span>
-              <div className="users-toolbar">
-                <button
-                  className="link-btn"
-                  type="button"
-                  onClick={() =>
-                    setEditForm((current) => ({
-                      ...current,
-                      assignedUsers: employeeUsers.map((candidate) => candidate.id),
-                    }))
-                  }
-                >
-                  Выбрать всех
-                </button>
-                <button
-                  className="link-btn"
-                  type="button"
-                  onClick={() => setEditForm((current) => ({ ...current, assignedUsers: [] }))}
-                >
-                  Снять выделение
-                </button>
-              </div>
-              <div className="users-box">
-                {employeeUsers.map((candidate) => (
-                  <label className="user-check" key={candidate.id}>
-                    <input
-                      type="checkbox"
-                      checked={editForm.assignedUsers.includes(candidate.id)}
-                      onChange={(event) =>
-                        setEditForm((current) => ({
-                          ...current,
-                          assignedUsers: event.target.checked
-                            ? [...current.assignedUsers, candidate.id]
-                            : current.assignedUsers.filter((id) => id !== candidate.id),
-                        }))
-                      }
-                    />
-                    <span>
-                      {candidate.fullName} ({candidate.email})
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <label className="form-field">
-              Описание
-              <textarea
-                rows="5"
-                value={editForm.description}
-                onChange={(event) =>
-                  setEditForm((current) => ({ ...current, description: event.target.value }))
-                }
-              />
-            </label>
-          </div>
-
-          <div className="modal-foot">
-            {document.status === "published" ? (
-              <button className="btn cancel" type="button" onClick={() => onArchive(document.id)}>
-                В архив
-              </button>
-            ) : null}
-            {document.status === "archived" ? (
-              <button
-                className="btn primary"
-                type="button"
-                disabled={loading}
-                onClick={() => onUnarchive(document.id)}
-              >
-                Вернуть из архива
-              </button>
-            ) : null}
-            <button className="btn danger-text" type="button" onClick={() => onDelete(document.id)}>
-              Удалить документ
-            </button>
-            <button
-              className="btn cancel"
-              type="button"
-              onClick={() => {
-                setEditForm({
-                  title: document.title || "",
-                  type: document.type,
-                  number: document.number || "",
-                  documentDate: toIsoDateValue(document.documentDate),
-                  description: document.description || "",
-                  assignedUsers: (document.assignedUsers || []).map((user) => user.id),
-                  folderId: document.folderId == null ? "" : String(document.folderId),
-                });
-                setTab("preview");
-              }}
-            >
-              Отмена
-            </button>
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Сохранение..." : "Сохранить реквизиты"}
-            </button>
-          </div>
-        </form>
-      ) : null}
-
-      {tab === "version" && isResponsible && !isTrash && document.status === "published" ? (
-        <form className="doc-form" onSubmit={handleNewVersion}>
-          <label className="form-field">
-            Причина новой версии
-            <textarea
-              rows="6"
-              placeholder="Что изменилось в новой версии"
-              value={versionForm.changeReason}
-              onChange={(event) =>
-                setVersionForm((current) => ({ ...current, changeReason: event.target.value }))
-              }
-              required
-            />
-          </label>
-          <label className="form-field">
-            Файл новой версии
-            <input
-              className="file-input"
-              type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
-              onChange={(event) =>
-                setVersionForm((current) => ({
-                  ...current,
-                  versionFile: event.target.files?.[0] || null,
-                }))
-              }
-              required
-            />
-          </label>
-          <div className="modal-foot">
-            <button className="btn cancel" type="button" onClick={() => setTab("preview")}>
-              Отмена
-            </button>
-            <button className="btn primary" type="submit" disabled={loading}>
-              {loading ? "Сохранение..." : "Создать новую версию"}
-            </button>
-          </div>
-        </form>
-      ) : null}
+      </div>
 
       {versionMenu && canManageVersions
         ? createPortal(
@@ -1235,6 +1265,21 @@ export default function DocumentPage({
                 Удалить версию
               </button>
             </div>,
+            window.document.body
+          )
+        : null}
+
+      {accessModalOpen
+        ? createPortal(
+            <AccessUsersModal
+              employeeUsers={employeeUsers}
+              selectedIds={editForm.assignedUsers}
+              onClose={() => setAccessModalOpen(false)}
+              onConfirm={(nextIds) => {
+                setEditForm((current) => ({ ...current, assignedUsers: nextIds }));
+                setAccessModalOpen(false);
+              }}
+            />,
             window.document.body
           )
         : null}
