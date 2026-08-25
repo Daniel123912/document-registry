@@ -118,7 +118,7 @@ export default function DocumentPage({
   const [comparePreview, setComparePreview] = useState(emptyComparePreview);
 
   const employeeUsers = (Array.isArray(users) ? users : []).filter(
-    (candidate) => candidate.role === "employee"
+    (candidate) => candidate.role === "employee" && candidate.isActive !== false
   );
   const selectedAccessUsers = employeeUsers.filter((candidate) =>
     editForm.assignedUsers.includes(candidate.id)
@@ -814,8 +814,19 @@ export default function DocumentPage({
 
           {tab === "requisites" && isResponsible && !isTrash ? (
             <form className="doc-form" onSubmit={handleSave}>
-              <div className="form-grid doc-requisites-grid">
-                <section className="doc-collapse">
+              <div
+                className={[
+                  "form-grid",
+                  "doc-requisites-grid",
+                  requisitesOpen.documents ? "is-docs-open" : "",
+                  requisitesOpen.access ? "is-access-open" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <section
+                  className={`doc-collapse doc-collapse-docs${requisitesOpen.documents ? " is-open" : ""}`}
+                >
                   <button
                     type="button"
                     className="doc-collapse-toggle"
@@ -912,7 +923,7 @@ export default function DocumentPage({
                       </label>
 
                       <label className="form-field">
-                        Дата документа
+                        Дата создания документа
                         <input
                           className="field-input"
                           type="date"
@@ -930,7 +941,9 @@ export default function DocumentPage({
                   ) : null}
                 </section>
 
-                <section className="doc-collapse">
+                <section
+                  className={`doc-collapse doc-collapse-access${requisitesOpen.access ? " is-open" : ""}`}
+                >
                   <button
                     type="button"
                     className="doc-collapse-toggle"
@@ -947,7 +960,7 @@ export default function DocumentPage({
                   </button>
                   {requisitesOpen.access ? (
                     <div className="doc-collapse-body">
-                      <div className="form-field">
+                      <div className="form-field access-summary-field">
                         <div className="access-summary-head">
                           <span>Сотрудники для ознакомления</span>
                           <button

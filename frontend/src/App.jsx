@@ -94,7 +94,9 @@ function App() {
 
   const overlayOpenedAt = useRef(0);
   const isResponsible = user?.role === "responsible";
-  const employeeUsers = asArray(users).filter((candidate) => candidate.role === "employee");
+  const employeeUsers = asArray(users).filter(
+    (candidate) => candidate.role === "employee" && candidate.isActive !== false
+  );
 
   const selectedDocument = useMemo(
     () =>

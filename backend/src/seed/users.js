@@ -1,31 +1,79 @@
 const { query } = require("../db");
 const { hashPassword } = require("../auth");
 
-async function seedDefaultUsers() {
-  const existingUsers = await query("SELECT COUNT(*)::int AS count FROM users");
-  if (existingUsers.rows[0].count > 0) {
-    return;
-  }
+const EMPLOYEE_NAMES = [
+  "Анна Смирнова",
+  "Пётр Иванов",
+  "Мария Козлова",
+  "Алексей Новиков",
+  "Елена Морозова",
+  "Дмитрий Волков",
+  "Ольга Соколова",
+  "Сергей Лебедев",
+  "Наталья Кузнецова",
+  "Андрей Попов",
+  "Татьяна Васильева",
+  "Игорь Павлов",
+  "Юлия Семёнова",
+  "Николай Голубев",
+  "Екатерина Виноградова",
+  "Максим Борисов",
+  "Ирина Фёдорова",
+  "Владимир Михайлов",
+  "Светлана Алексеева",
+  "Роман Ефимов",
+  "Дарья Григорьева",
+  "Артём Степанов",
+  "Виктория Орлова",
+  "Кирилл Андреев",
+  "Полина Макарова",
+  "Глеб Николаев",
+  "Алина Захарова",
+  "Тимур Белов",
+  "Валерия Медведева",
+  "Станислав Крылов",
+  "Марина Тихонова",
+  "Денис Комаров",
+  "Ксения Овчинникова",
+  "Павел Гусев",
+  "Вероника Лазарева",
+  "Олег Тарасов",
+  "Людмила Беляева",
+  "Илья Жуков",
+  "Анастасия Савельева",
+  "Евгений Романов",
+];
 
+async function seedDefaultUsers() {
   const responsiblePassword = await hashPassword("admin1234");
   const employeePassword = await hashPassword("user1234");
 
   await query(
     `
       INSERT INTO users (full_name, email, password_hash, role)
-      VALUES
-        ('Иван Петров', $1, $2, 'responsible'),
-        ('Анна Смирнова', $3, $4, 'employee')
+      VALUES ('Иван Петров', $1, $2, 'responsible')
+      ON CONFLICT (email) DO NOTHING
     `,
-    [
-      "responsible@bakor.local",
-      responsiblePassword,
-      "employee@bakor.local",
-      employeePassword,
-    ]
+    ["responsible@bakor.local", responsiblePassword]
   );
+
+  for (let index = 0; index < EMPLOYEE_NAMES.length; index += 1) {
+    const fullName = EMPLOYEE_NAMES[index];
+    const email =
+      index === 0 ? "employee@bakor.local" : `employee${index + 1}@bakor.local`;
+
+    await query(
+      `
+        INSERT INTO users (full_name, email, password_hash, role)
+        VALUES ($1, $2, $3, 'employee')
+        ON CONFLICT (email) DO NOTHING
+      `,
+      [fullName, email, employeePassword]
+    );
+  }
 }
 
 module.exports = {
   seedDefaultUsers,
+  EMPLOYEE_NAMES,
 };

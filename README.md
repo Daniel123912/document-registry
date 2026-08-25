@@ -108,7 +108,7 @@ npm run dev
 ## Демо-пользователи
 
 - Ответственный: `responsible@bakor.local` / `admin1234`
-- Сотрудник: `employee@bakor.local` / `user1234`
+- Сотрудники (40 шт.): `employee@bakor.local`, `employee2@bakor.local` … `employee40@bakor.local` / `user1234`
 
 ## Порты
 

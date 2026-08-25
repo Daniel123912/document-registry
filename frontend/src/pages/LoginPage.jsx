@@ -34,7 +34,7 @@ export default function LoginPage({ authForm, setAuthForm, onSubmit, loading, er
         <div className="helper">
           <strong>Демо-учетки:</strong>
           <div>responsible@bakor.local / admin1234</div>
-          <div>employee@bakor.local / user1234</div>
+          <div>employee@bakor.local … employee40@bakor.local / user1234</div>
         </div>
         {error ? <div className="alert error">{error}</div> : null}
       </section>

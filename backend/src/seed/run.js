@@ -7,7 +7,7 @@ async function seed() {
 
   console.log("Seed completed.");
   console.log("Responsible: responsible@bakor.local / admin1234");
-  console.log("Employee: employee@bakor.local / user1234");
+  console.log("Employees: employee@bakor.local ... employee40@bakor.local / user1234");
   process.exit(0);
 }
 
