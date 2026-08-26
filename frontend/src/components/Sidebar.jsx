@@ -124,6 +124,7 @@ export default function Sidebar({
   onReport,
   onCreate,
   onLogout,
+  inboxPendingCount = 0,
 }) {
   const [workOpen, setWorkOpen] = useState(true);
   const [expandedTypes, setExpandedTypes] = useState(() => new Set());
@@ -260,7 +261,12 @@ export default function Sidebar({
           className={section === "inbox" ? "nav-item active" : "nav-item"}
           onClick={onInbox}
         >
-          На ознакомление
+          <span>На ознакомление</span>
+          {inboxPendingCount > 0 ? (
+            <span className="nav-badge" aria-label={`Ожидает ознакомления: ${inboxPendingCount}`}>
+              {inboxPendingCount > 99 ? "99+" : inboxPendingCount}
+            </span>
+          ) : null}
         </button>
 
         <div className="nav-tree">

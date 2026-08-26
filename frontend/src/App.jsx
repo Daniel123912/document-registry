@@ -97,6 +97,10 @@ function App() {
   const employeeUsers = asArray(users).filter(
     (candidate) => candidate.role === "employee" && candidate.isActive !== false
   );
+  const inboxPendingCount = useMemo(
+    () => assignedDocuments.filter((document) => !document.isAcknowledged).length,
+    [assignedDocuments]
+  );
 
   const selectedDocument = useMemo(
     () =>
@@ -673,6 +677,7 @@ function App() {
         }}
         onCreate={openCreateModal}
         onLogout={logout}
+        inboxPendingCount={inboxPendingCount}
       />
 
       <main className="main">

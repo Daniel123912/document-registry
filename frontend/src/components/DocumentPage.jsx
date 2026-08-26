@@ -104,6 +104,10 @@ export default function DocumentPage({
     documents: false,
     access: false,
   });
+  const [previewOpen, setPreviewOpen] = useState({
+    versions: false,
+    ack: false,
+  });
   const [accessModalOpen, setAccessModalOpen] = useState(false);
   const [versionMenu, setVersionMenu] = useState(null);
   const versionMenuRef = useRef(null);
@@ -126,6 +130,8 @@ export default function DocumentPage({
     editForm.assignedUsers.includes(candidate.id)
   );
   const accessSummaryExpanded = selectedAccessUsers.length >= ACCESS_SUMMARY_EXPAND_AT;
+  const previewVersionsExpanded = (document.versions || []).length >= ACCESS_SUMMARY_EXPAND_AT;
+  const previewAckExpanded = (document.assignedUsers || []).length >= ACCESS_SUMMARY_EXPAND_AT;
   const folderOptions = flattenFoldersForSelect(folders, editForm.type);
   const ackTotal = document.assignedCount || document.assignedUsers?.length || 0;
   const ackDone = document.acknowledgedCount || 0;
@@ -644,86 +650,155 @@ export default function DocumentPage({
                 ) : null}
               </div>
 
-              <div className="doc-side-block">
-                <div className="doc-side-title">Версии</div>
-                {(document.versions || []).length === 0 ? (
+              <div
+                className={[
+                  "doc-requisites-grid",
+                  previewOpen.versions ? "is-docs-open" : "",
+                  previewOpen.ack ? "is-access-open" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                <section
+                  className={[
+                    "doc-collapse",
+                    "doc-collapse-docs",
+                    previewOpen.versions ? "is-open" : "",
+                    previewVersionsExpanded ? "has-many-users" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
                   <button
                     type="button"
-                    className="version-chip active"
-                    onClick={() => setPreviewVersionNo(0)}
+                    className="doc-collapse-toggle"
+                    aria-expanded={previewOpen.versions}
+                    onClick={() =>
+                      setPreviewOpen((current) => ({
+                        ...current,
+                        versions: !current.versions,
+                      }))
+                    }
                   >
-                    Черновик
+                    <span className={`chevron${previewOpen.versions ? " open" : ""}`} />
+                    Версии
                   </button>
-                ) : (
-                  (document.versions || []).map((version) => (
-                    <button
-                      key={version.versionNo}
-                      type="button"
-                      className={
-                        previewVersionNo === version.versionNo
-                          ? "version-chip active"
-                          : "version-chip"
-                      }
-                      onClick={() => setPreviewVersionNo(version.versionNo)}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        if (canManageVersions) {
-                          openVersionMenu(event, version);
-                        }
-                      }}
-                    >
-                      <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
-                      {version.changeReason ? <small>{version.changeReason}</small> : null}
-                    </button>
-                  ))
-                )}
-                {canCompare ? (
-                  <div className="doc-compare">
-                    <label className="doc-compare-toggle">
-                      <input
-                        type="checkbox"
-                        checked={compareEnabled}
-                        onChange={(event) => setCompareEnabled(event.target.checked)}
-                      />
-                      Показать изменения
-                    </label>
-                    {compareEnabled ? (
-                      <label className="form-field">
-                        Сравнить с
-                        <select
-                          className="field-select"
-                          value={compareWithVersionNo || ""}
-                          onChange={(event) =>
-                            setCompareWithVersionNo(Number(event.target.value) || null)
-                          }
+                  {previewOpen.versions ? (
+                    <div className="doc-collapse-body">
+                      {(document.versions || []).length === 0 ? (
+                        <button
+                          type="button"
+                          className="version-chip active"
+                          onClick={() => setPreviewVersionNo(0)}
                         >
-                          {compareVersionOptions.map((version) => (
-                            <option key={version.versionNo} value={version.versionNo}>
-                              {versionLabel(version.versionNo, document.activeVersionNo)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
+                          Черновик
+                        </button>
+                      ) : (
+                        (document.versions || []).map((version) => (
+                          <button
+                            key={version.versionNo}
+                            type="button"
+                            className={
+                              previewVersionNo === version.versionNo
+                                ? "version-chip active"
+                                : "version-chip"
+                            }
+                            onClick={() => setPreviewVersionNo(version.versionNo)}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              if (canManageVersions) {
+                                openVersionMenu(event, version);
+                              }
+                            }}
+                          >
+                            <span>{versionLabel(version.versionNo, document.activeVersionNo)}</span>
+                            {version.changeReason ? <small>{version.changeReason}</small> : null}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+
+                <section
+                  className={[
+                    "doc-collapse",
+                    "doc-collapse-access",
+                    previewOpen.ack ? "is-open" : "",
+                    previewAckExpanded ? "has-many-users" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  <button
+                    type="button"
+                    className="doc-collapse-toggle"
+                    aria-expanded={previewOpen.ack}
+                    onClick={() =>
+                      setPreviewOpen((current) => ({
+                        ...current,
+                        ack: !current.ack,
+                      }))
+                    }
+                  >
+                    <span className={`chevron${previewOpen.ack ? " open" : ""}`} />
+                    Ознакомление
+                  </button>
+                  {previewOpen.ack ? (
+                    <div className="doc-collapse-body">
+                      <div className="ack-progress">
+                        <div className="ack-progress-bar" style={{ width: `${ackPercent}%` }} />
+                      </div>
+                      <div className="ack-progress-label">
+                        {ackDone} из {ackTotal}
+                      </div>
+                      <div className="access-summary-list preview-ack-list">
+                        {(document.assignedUsers || []).length > 0 ? (
+                          (document.assignedUsers || []).map((user) => (
+                            <div className="ack-user" key={user.id}>
+                              <span>{user.fullName}</span>
+                              {user.isAcknowledged ? <span className="ack-check">✓</span> : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="muted">Никто не назначен</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
               </div>
 
-              <div className="doc-side-block">
-                <div className="doc-side-title">Ознакомление</div>
-                <div className="ack-progress">
-                  <div className="ack-progress-bar" style={{ width: `${ackPercent}%` }} />
+              {canCompare ? (
+                <div className="doc-compare">
+                  <label className="doc-compare-toggle">
+                    <input
+                      type="checkbox"
+                      checked={compareEnabled}
+                      onChange={(event) => setCompareEnabled(event.target.checked)}
+                    />
+                    Показать изменения
+                  </label>
+                  {compareEnabled ? (
+                    <label className="form-field">
+                      Сравнить с
+                      <select
+                        className="field-select"
+                        value={compareWithVersionNo || ""}
+                        onChange={(event) =>
+                          setCompareWithVersionNo(Number(event.target.value) || null)
+                        }
+                      >
+                        {compareVersionOptions.map((version) => (
+                          <option key={version.versionNo} value={version.versionNo}>
+                            {versionLabel(version.versionNo, document.activeVersionNo)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                 </div>
-                <div className="ack-progress-label">
-                  {ackDone} из {ackTotal}
-                </div>
-                {(document.assignedUsers || []).map((user) => (
-                  <div className="ack-user" key={user.id}>
-                    <span>{user.fullName}</span>
-                    {user.isAcknowledged ? <span className="ack-check">✓</span> : null}
-                  </div>
-                ))}
-              </div>
+              ) : null}
 
               <div className="doc-side-block doc-side-actions">
                 {canZoom && !filePreview.loading && previewFile.url ? (
