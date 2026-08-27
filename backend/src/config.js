@@ -23,6 +23,8 @@ function buildDatabaseUrl() {
   return `postgres://${user}:${password}@${host}:${port}/${name}`;
 }
 
+const smtpPort = Number(process.env.SMTP_PORT || 465);
+
 module.exports = {
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || "change-me",
@@ -30,4 +32,19 @@ module.exports = {
   uploadsDir,
   uploadsTmpDir,
   trashRetentionDays: Number(process.env.TRASH_RETENTION_DAYS || 30),
+  appPublicUrl: process.env.APP_PUBLIC_URL || "http://127.0.0.1:5173",
+  mail: {
+    host: process.env.SMTP_HOST || "",
+    port: smtpPort,
+    secure:
+      process.env.SMTP_SECURE != null
+        ? process.env.SMTP_SECURE === "true"
+        : smtpPort === 465,
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+    from:
+      process.env.MAIL_FROM ||
+      process.env.SMTP_USER ||
+      "Реестр БАКОР <noreply@mail.ru>",
+  },
 };

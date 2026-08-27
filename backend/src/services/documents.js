@@ -4,6 +4,7 @@ const { trashRetentionDays } = require("../config");
 const { decodeOriginalFilename } = require("../utils/filenames");
 const { normalizeDocument } = require("../utils/serializers");
 const { assertFolderMatchesType } = require("./folders");
+const { notifyAssignedUsers } = require("./mail");
 const {
   fileApiPath,
   placeUploadedFile,
@@ -401,6 +402,9 @@ async function publishDocument({ documentId, userId }) {
       [documentId]
     );
   });
+
+  // Письма не должны блокировать ответ API
+  void notifyAssignedUsers({ documentId, kind: "publish" });
 }
 
 async function createVersion({ documentId, changeReason, file, userId }) {
@@ -465,6 +469,12 @@ async function createVersion({ documentId, changeReason, file, userId }) {
     await removeIfExists(file.path);
     throw error;
   }
+
+  void notifyAssignedUsers({
+    documentId,
+    kind: "new_version",
+    changeReason,
+  });
 }
 
 async function deleteVersion({ documentId, versionNo }) {

@@ -64,6 +64,33 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function readDocumentIdFromUrl() {
+  try {
+    const raw = new URLSearchParams(window.location.search).get("document");
+    if (!raw) {
+      return null;
+    }
+    const id = Number(raw);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDocumentQueryParam() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("document")) {
+      return;
+    }
+    url.searchParams.delete("document");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, "", next);
+  } catch {
+    // ignore
+  }
+}
+
 function App() {
   const [token, setToken] = useState(localStorage.getItem("bakorToken") || "");
   const [user, setUser] = useState(() => readStoredUser());
@@ -93,6 +120,7 @@ function App() {
   const [prompt, setPrompt] = useState(null);
 
   const overlayOpenedAt = useRef(0);
+  const pendingDocumentIdRef = useRef(readDocumentIdFromUrl());
   const isResponsible = user?.role === "responsible";
   const employeeUsers = asArray(users).filter(
     (candidate) => candidate.role === "employee" && candidate.isActive !== false
@@ -234,12 +262,44 @@ function App() {
         trashData = [],
       ] = await Promise.all(requests);
 
-      setDocuments(asArray(documentsData).map(withReadableFilenames));
-      setAssignedDocuments(asArray(assignedData).map(withReadableFilenames));
+      const nextDocuments = asArray(documentsData).map(withReadableFilenames);
+      const nextAssigned = asArray(assignedData).map(withReadableFilenames);
+      const nextTrash = asArray(trashData).map(withReadableFilenames);
+
+      setDocuments(nextDocuments);
+      setAssignedDocuments(nextAssigned);
       setFolders(asArray(foldersData));
       setReportRows(asArray(reportData));
       setUsers(asArray(usersData));
-      setTrashDocuments(asArray(trashData).map(withReadableFilenames));
+      setTrashDocuments(nextTrash);
+
+      const pendingId = pendingDocumentIdRef.current;
+      if (pendingId) {
+        const found =
+          nextDocuments.find((document) => document.id === pendingId) ||
+          nextAssigned.find((document) => document.id === pendingId) ||
+          nextTrash.find((document) => document.id === pendingId);
+
+        if (found) {
+          if (found.isAssigned) {
+            setSection("inbox");
+          } else if (found.status === "archived") {
+            setSection("archive");
+          } else if (found.deletedAt) {
+            setSection("trash");
+          } else {
+            setSection("active");
+            if (found.type) {
+              setActiveType(found.type);
+            }
+            setActiveFolderId(found.folderId ?? null);
+          }
+          overlayOpenedAt.current = Date.now();
+          setSelectedDocumentId(pendingId);
+          pendingDocumentIdRef.current = null;
+          clearDocumentQueryParam();
+        }
+      }
     } catch (requestError) {
       setError(requestError.message);
     } finally {
