@@ -11,7 +11,6 @@ const {
   updateLetter,
   deleteLetter,
   confirmLetter,
-  sendLetter,
 } = require("../services/letters");
 
 const router = express.Router();
@@ -111,17 +110,6 @@ router.post(
   asyncHandler(async (req, res) => {
     const letterId = Number(req.params.id);
     const letter = await confirmLetter(letterId);
-    res.json(letter);
-  })
-);
-
-router.post(
-  "/:id/send",
-  requireAuth,
-  requireResponsible,
-  asyncHandler(async (req, res) => {
-    const letterId = Number(req.params.id);
-    const letter = await sendLetter(letterId);
     res.json(letter);
   })
 );

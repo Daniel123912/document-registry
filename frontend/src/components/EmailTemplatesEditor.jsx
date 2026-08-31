@@ -1,49 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
-import {
-  Alignment,
-  AutoImage,
-  AutoLink,
-  BlockQuote,
-  Bold,
-  DecoupledEditor,
-  Essentials,
-  Font,
-  FontBackgroundColor,
-  FontColor,
-  FontFamily,
-  FontSize,
-  GeneralHtmlSupport,
-  Heading,
-  HorizontalLine,
-  Image,
-  ImageCaption,
-  ImageInsert,
-  ImageResize,
-  ImageStyle,
-  ImageToolbar,
-  Indent,
-  IndentBlock,
-  Italic,
-  Link,
-  List,
-  Paragraph,
-  RemoveFormat,
-  SelectAll,
-  SourceEditing,
-  Strikethrough,
-  Subscript,
-  Superscript,
-  Table,
-  TableCaption,
-  TableCellProperties,
-  TableColumnResize,
-  TableProperties,
-  TableToolbar,
-  Underline,
-  WordCount,
-} from "ckeditor5";
+import { DecoupledEditor } from "ckeditor5";
 import "ckeditor5/ckeditor5.css";
+import {
+  createEditorConfig,
+  createMenuActionHandler,
+  EmailEditorMenubar,
+  insertHtmlSnippet,
+  isEditorCommandEnabled,
+  mountEditorToolbar,
+} from "./emailDocEditorShared";
 import {
   createEmailTemplate,
   deleteEmailTemplate,
@@ -57,400 +23,12 @@ import {
 import LetterTemplate from "./LetterTemplate";
 import {
   buildLetterPrintDocument,
+  hasOutgoingRequisitesMarkers,
   isBakorLetterLayout,
   LAYOUT_KIND_BAKOR,
+  normalizeOutgoingRequisitesInTemplate,
+  OUTGOING_REQUISITES_SNIPPET,
 } from "../utils/bakorLetterTemplate";
-
-const MENU_MENUS = [
-  { id: "file", label: "Файл" },
-  { id: "edit", label: "Редактировать" },
-  { id: "view", label: "Вид" },
-  { id: "insert", label: "Вставка" },
-  { id: "format", label: "Формат" },
-];
-
-function getMenuItems(menuId, { canSave, importing, saving, commandEnabled }) {
-  const disabled = (command) => command && !commandEnabled(command);
-
-  switch (menuId) {
-    case "file":
-      return [
-        {
-          id: "import",
-          label: "Загрузить из файла…",
-          action: "import",
-          disabled: importing || saving,
-        },
-        {
-          id: "save",
-          label: "Сохранить шаблон",
-          action: "save",
-          shortcut: "Ctrl+S",
-          disabled: !canSave || saving || importing,
-        },
-        { type: "separator", id: "sep-print" },
-        { id: "print", label: "Печать…", action: "print" },
-      ];
-    case "edit":
-      return [
-        {
-          id: "undo",
-          label: "Отменить",
-          action: "undo",
-          shortcut: "Ctrl+Z",
-          disabled: disabled("undo"),
-        },
-        {
-          id: "redo",
-          label: "Повторить",
-          action: "redo",
-          shortcut: "Ctrl+Y",
-          disabled: disabled("redo"),
-        },
-        { type: "separator", id: "sep-clipboard" },
-        { id: "cut", label: "Вырезать", action: "cut", shortcut: "Ctrl+X" },
-        { id: "copy", label: "Копировать", action: "copy", shortcut: "Ctrl+C" },
-        { id: "paste", label: "Вставить", action: "paste", shortcut: "Ctrl+V" },
-        { type: "separator", id: "sep-select" },
-        {
-          id: "selectAll",
-          label: "Выделить всё",
-          action: "selectAll",
-          shortcut: "Ctrl+A",
-          disabled: disabled("selectAll"),
-        },
-      ];
-    case "view":
-      return [
-        {
-          id: "sourceEditing",
-          label: "Редактирование HTML",
-          action: "sourceEditing",
-          disabled: disabled("sourceEditing"),
-        },
-      ];
-    case "insert":
-      return [
-        {
-          id: "link",
-          label: "Ссылка…",
-          action: "link",
-          shortcut: "Ctrl+K",
-          disabled: disabled("link"),
-        },
-        {
-          id: "insertImage",
-          label: "Изображение…",
-          action: "insertImage",
-          disabled: disabled("insertImage"),
-        },
-        {
-          id: "insertTable",
-          label: "Таблица",
-          action: "insertTable",
-          disabled: disabled("insertTable"),
-        },
-        { type: "separator", id: "sep-insert" },
-        {
-          id: "horizontalLine",
-          label: "Горизонтальная линия",
-          action: "horizontalLine",
-          disabled: disabled("horizontalLine"),
-        },
-        {
-          id: "blockQuote",
-          label: "Цитата",
-          action: "blockQuote",
-          disabled: disabled("blockQuote"),
-        },
-      ];
-    case "format":
-      return [
-        { id: "paragraph", label: "Обычный текст", action: "heading", value: "paragraph" },
-        { id: "heading1", label: "Заголовок 1", action: "heading", value: "heading1" },
-        { id: "heading2", label: "Заголовок 2", action: "heading", value: "heading2" },
-        { id: "heading3", label: "Заголовок 3", action: "heading", value: "heading3" },
-        { type: "separator", id: "sep-style" },
-        {
-          id: "bold",
-          label: "Жирный",
-          action: "bold",
-          shortcut: "Ctrl+B",
-          disabled: disabled("bold"),
-        },
-        {
-          id: "italic",
-          label: "Курсив",
-          action: "italic",
-          shortcut: "Ctrl+I",
-          disabled: disabled("italic"),
-        },
-        {
-          id: "underline",
-          label: "Подчёркнутый",
-          action: "underline",
-          shortcut: "Ctrl+U",
-          disabled: disabled("underline"),
-        },
-        {
-          id: "strikethrough",
-          label: "Зачёркнутый",
-          action: "strikethrough",
-          disabled: disabled("strikethrough"),
-        },
-        {
-          id: "removeFormat",
-          label: "Убрать форматирование",
-          action: "removeFormat",
-          disabled: disabled("removeFormat"),
-        },
-        { type: "separator", id: "sep-align" },
-        { id: "alignLeft", label: "По левому краю", action: "alignment", value: "left" },
-        { id: "alignCenter", label: "По центру", action: "alignment", value: "center" },
-        { id: "alignRight", label: "По правому краю", action: "alignment", value: "right" },
-        { id: "alignJustify", label: "По ширине", action: "alignment", value: "justify" },
-      ];
-    default:
-      return [];
-  }
-}
-
-function EmailEditorMenubar({
-  openMenu,
-  onToggleMenu,
-  onCloseMenu,
-  onMenuAction,
-  canSave,
-  importing,
-  saving,
-  commandEnabled,
-}) {
-  const menubarRef = useRef(null);
-
-  useEffect(() => {
-    if (!openMenu) {
-      return undefined;
-    }
-
-    function handlePointerDown(event) {
-      if (menubarRef.current && !menubarRef.current.contains(event.target)) {
-        onCloseMenu();
-      }
-    }
-
-    function handleKeyDown(event) {
-      if (event.key === "Escape") {
-        onCloseMenu();
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [openMenu, onCloseMenu]);
-
-  return (
-    <div ref={menubarRef} className="email-doc-editor__menubar" role="menubar" aria-label="Меню редактора">
-      {MENU_MENUS.map((menu) => {
-        const items = getMenuItems(menu.id, { canSave, importing, saving, commandEnabled });
-
-        return (
-          <div key={menu.id} className="email-doc-editor__menu">
-            <button
-              type="button"
-              className={`email-doc-editor__menu-trigger${openMenu === menu.id ? " is-open" : ""}`}
-              onClick={() => onToggleMenu(menu.id)}
-              aria-expanded={openMenu === menu.id}
-              aria-haspopup="menu"
-            >
-              {menu.label}
-            </button>
-
-            {openMenu === menu.id ? (
-              <div className="email-doc-editor__menu-dropdown" role="menu">
-                {items.map((item) =>
-                  item.type === "separator" ? (
-                    <div key={`${menu.id}-${item.id}`} className="email-doc-editor__menu-separator" />
-                  ) : (
-                    <button
-                      key={item.id}
-                      type="button"
-                      role="menuitem"
-                      className="email-doc-editor__menu-dropdown-item"
-                      disabled={item.disabled}
-                      onClick={() => onMenuAction(item.action, item.value)}
-                    >
-                      <span>{item.label}</span>
-                      {item.shortcut ? (
-                        <span className="email-doc-editor__menu-shortcut">{item.shortcut}</span>
-                      ) : null}
-                    </button>
-                  )
-                )}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-const editorPlugins = [
-  Essentials,
-  GeneralHtmlSupport,
-  Paragraph,
-  Heading,
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  Subscript,
-  Superscript,
-  Font,
-  FontFamily,
-  FontSize,
-  FontColor,
-  FontBackgroundColor,
-  RemoveFormat,
-  Link,
-  AutoLink,
-  List,
-  Alignment,
-  Indent,
-  IndentBlock,
-  BlockQuote,
-  HorizontalLine,
-  Image,
-  ImageCaption,
-  ImageInsert,
-  ImageResize,
-  ImageStyle,
-  ImageToolbar,
-  AutoImage,
-  Table,
-  TableCaption,
-  TableCellProperties,
-  TableColumnResize,
-  TableProperties,
-  TableToolbar,
-  SelectAll,
-  SourceEditing,
-  WordCount,
-];
-
-function createEditorConfig(onWordCountUpdate) {
-  return {
-  licenseKey: "GPL",
-  plugins: editorPlugins,
-  toolbar: {
-    items: [
-      "undo",
-      "redo",
-      "|",
-      "heading",
-      "|",
-      "fontFamily",
-      "fontSize",
-      "|",
-      "bold",
-      "italic",
-      "underline",
-      "strikethrough",
-      "|",
-      "fontColor",
-      "fontBackgroundColor",
-      "|",
-      "superscript",
-      "subscript",
-      "removeFormat",
-      "|",
-      "alignment",
-      "|",
-      "bulletedList",
-      "numberedList",
-      "outdent",
-      "indent",
-      "|",
-      "link",
-      "insertImage",
-      "insertTable",
-      "|",
-      "blockQuote",
-      "horizontalLine",
-      "|",
-      "sourceEditing",
-    ],
-    shouldNotGroupWhenFull: true,
-  },
-  heading: {
-    options: [
-      { model: "paragraph", title: "Обычный текст", class: "ck-heading_paragraph" },
-      { model: "heading1", view: "h1", title: "Заголовок 1", class: "ck-heading_heading1" },
-      { model: "heading2", view: "h2", title: "Заголовок 2", class: "ck-heading_heading2" },
-      { model: "heading3", view: "h3", title: "Заголовок 3", class: "ck-heading_heading3" },
-    ],
-  },
-  fontFamily: {
-    options: [
-      "default",
-      "Arial, Helvetica, sans-serif",
-      "Georgia, serif",
-      "Times New Roman, Times, serif",
-      "Courier New, Courier, monospace",
-      "Verdana, Geneva, sans-serif",
-    ],
-  },
-  fontSize: {
-    options: [10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32],
-    supportAllValues: true,
-  },
-  wordCount: {
-    onUpdate: onWordCountUpdate,
-  },
-  link: {
-    addTargetToExternalLinks: true,
-    defaultProtocol: "https://",
-  },
-  image: {
-    toolbar: [
-      "imageStyle:inline",
-      "imageStyle:block",
-      "imageStyle:side",
-      "|",
-      "toggleImageCaption",
-      "imageTextAlternative",
-      "|",
-      "resizeImage",
-    ],
-  },
-  table: {
-    contentToolbar: [
-      "tableColumn",
-      "tableRow",
-      "mergeTableCells",
-      "tableProperties",
-      "tableCellProperties",
-    ],
-  },
-  htmlSupport: {
-    allow: [
-      { name: "div", classes: true, attributes: ["class", "aria-hidden", "contenteditable"] },
-      { name: "img", classes: true, attributes: ["src", "alt", "class", "draggable"] },
-      { name: "p", classes: true },
-      { name: "a", classes: true, attributes: ["href", "target", "rel"] },
-      { name: "ul", classes: true },
-      { name: "li", classes: true },
-      { name: "strong" },
-      { name: "br" },
-    ],
-  },
-};
-}
 
 function emptyDraft() {
   return {
@@ -588,80 +166,28 @@ export default function EmailTemplatesEditor({
 
   function handleEditorReady(editor) {
     editorRef.current = editor;
-
-    if (toolbarRef.current) {
-      toolbarRef.current.replaceChildren();
-      toolbarRef.current.appendChild(editor.ui.view.toolbar.element);
-    }
+    mountEditorToolbar(editor, toolbarRef);
   }
 
   function isCommandEnabled(commandName) {
-    return editorRef.current?.commands.get(commandName)?.isEnabled ?? false;
+    return isEditorCommandEnabled(editorRef, commandName);
   }
 
-  function focusEditor() {
-    editorRef.current?.editing.view.focus();
-  }
+  function insertOutgoingRequisitesSnippet() {
+    const htmlBody = insertHtmlSnippet(editorRef, OUTGOING_REQUISITES_SNIPPET);
 
-  function runEditorCommand(commandName, options) {
-    const editor = editorRef.current;
-    if (!editor) {
-      return false;
-    }
-
-    const command = editor.commands.get(commandName);
-    if (!command?.isEnabled) {
-      return false;
-    }
-
-    if (options !== undefined) {
-      editor.execute(commandName, options);
-    } else {
-      editor.execute(commandName);
-    }
-
-    editor.editing.view.focus();
-    return true;
-  }
-
-  function runClipboardCommand(operation) {
-    const editor = editorRef.current;
-    if (!editor) {
+    if (htmlBody) {
+      setDraft((current) => ({ ...current, htmlBody }));
+      onNotice("Строка исходящего номера вставлена. Номер и дата подставятся при создании письма.");
       return;
     }
 
-    const editable = editor.ui.getEditableElement();
-    if (!editable) {
-      return;
-    }
-
-    editable.focus();
-
-    try {
-      document.execCommand(operation);
-    } catch {
-      if (operation === "paste") {
-        navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (!text) {
-              return;
-            }
-
-            editor.model.change((writer) => {
-              editor.model.insertContent(
-                writer.createText(text),
-                editor.model.document.selection
-              );
-            });
-          })
-          .catch(() => {
-            onError("Не удалось вставить из буфера обмена.");
-          });
-      }
-    }
-
-    editor.editing.view.focus();
+    setDraft((current) => ({
+      ...current,
+      htmlBody: `${current.htmlBody || ""}${OUTGOING_REQUISITES_SNIPPET}`,
+    }));
+    setEditorVersion((current) => current + 1);
+    onNotice("Строка исходящего номера вставлена. Номер и дата подставятся при создании письма.");
   }
 
   function printEditorContent() {
@@ -705,54 +231,6 @@ export default function EmailTemplatesEditor({
     printWindow.print();
   }
 
-  function handleMenuAction(action, value) {
-    setOpenMenu(null);
-
-    switch (action) {
-      case "import":
-        importInputRef.current?.click();
-        break;
-      case "save":
-        handleSave();
-        break;
-      case "print":
-        printEditorContent();
-        break;
-      case "undo":
-      case "redo":
-      case "selectAll":
-      case "sourceEditing":
-      case "link":
-      case "insertImage":
-      case "horizontalLine":
-      case "blockQuote":
-      case "bold":
-      case "italic":
-      case "underline":
-      case "strikethrough":
-      case "removeFormat":
-        runEditorCommand(action);
-        break;
-      case "insertTable":
-        runEditorCommand("insertTable", { rows: 3, columns: 3, headingRows: 0 });
-        break;
-      case "heading":
-        runEditorCommand("heading", { value });
-        break;
-      case "alignment":
-        runEditorCommand("alignment", { value });
-        break;
-      case "cut":
-      case "copy":
-      case "paste":
-        runClipboardCommand(action);
-        break;
-      default:
-        focusEditor();
-        break;
-    }
-  }
-
   useEffect(() => {
     function handleSaveShortcut(event) {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
@@ -782,9 +260,10 @@ export default function EmailTemplatesEditor({
 
     try {
       const imported = await importEmailTemplateFromFile(file);
+      const htmlBody = normalizeOutgoingRequisitesInTemplate(imported.htmlBody);
       setDraft((current) => ({
         ...current,
-        htmlBody: imported.htmlBody,
+        htmlBody,
       }));
       setEditorVersion((current) => current + 1);
       onNotice("Шаблон загружен из файла. Проверьте текст и сохраните изменения.");
@@ -853,10 +332,11 @@ export default function EmailTemplatesEditor({
     onError("");
 
     try {
+      const htmlBody = normalizeOutgoingRequisitesInTemplate(draft.htmlBody);
       const updated = await updateEmailTemplate(token, activeTemplate.id, {
         folderId: folderId ?? null,
         name: draft.name,
-        htmlBody: draft.htmlBody,
+        htmlBody,
         subject: draft.subject,
         triggerKind: draft.triggerKind,
         layoutKind: draft.layoutKind,
@@ -872,6 +352,16 @@ export default function EmailTemplatesEditor({
       setSaving(false);
     }
   }
+
+  const handleMenuAction = createMenuActionHandler({
+    editorRef,
+    onError,
+    onImport: () => importInputRef.current?.click(),
+    onSave: handleSave,
+    onPrint: printEditorContent,
+    onInsertOutgoingRequisites: insertOutgoingRequisitesSnippet,
+    setOpenMenu,
+  });
 
   return (
     <section className="list-card email-templates-card">
@@ -989,6 +479,20 @@ export default function EmailTemplatesEditor({
 
             <div className="form-field email-doc-field">
               <span>Текст письма</span>
+              <p className="helper email-template-outgoing-hint">
+                Чтобы номер и дата исходящего подставлялись автоматически, используйте меню{" "}
+                <strong>Вставка → Исходящий номер</strong> или строку{" "}
+                <code>Исх. № {"{{outgoingNumber}}"} от {"{{outgoingDate}}"}</code>. При сохранении
+                уже введённые номера (например, «Исх. № 2 от 31.08.2026») будут заменены на
+                плейсхолдеры.
+              </p>
+              {isBakorLetterLayout(draft.layoutKind) &&
+              !hasOutgoingRequisitesMarkers(draft.htmlBody) ? (
+                <p className="helper email-template-outgoing-warning">
+                  В этом шаблоне нет строки исходящего номера — при создании письма номер не
+                  подставится.
+                </p>
+              ) : null}
               <div className="email-doc-editor">
                 <EmailEditorMenubar
                   openMenu={openMenu}

@@ -1,20 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { CKEditor } from "@ckeditor/ckeditor5-react";
-import {
-  Alignment,
-  Bold,
-  Essentials,
-  GeneralHtmlSupport,
-  Heading,
-  Italic,
-  Link,
-  List,
-  Paragraph,
-  RemoveFormat,
-  Underline,
-  DecoupledEditor,
-} from "ckeditor5";
+import { DecoupledEditor } from "ckeditor5";
 import "ckeditor5/ckeditor5.css";
+import {
+  createEditorConfig,
+  createMenuActionHandler,
+  EmailEditorMenubar,
+  insertHtmlSnippet,
+  isEditorCommandEnabled,
+  mountEditorToolbar,
+} from "./emailDocEditorShared";
 import {
   confirmLetter,
   createLetter,
@@ -22,7 +17,6 @@ import {
   fetchEmailTemplates,
   fetchLetter,
   fetchNextOutgoingNumber,
-  sendLetter,
   updateLetter,
 } from "../api/client";
 import LetterTemplate from "./LetterTemplate";
@@ -31,51 +25,10 @@ import {
   buildLetterPrintDocument,
   isBakorLetterLayout,
   LAYOUT_KIND_BAKOR,
+  normalizeOutgoingRequisitesInTemplate,
+  OUTGOING_REQUISITES_SNIPPET,
 } from "../utils/bakorLetterTemplate";
-
-const editorConfig = {
-  licenseKey: "GPL",
-  plugins: [
-    Essentials,
-    GeneralHtmlSupport,
-    Paragraph,
-    Heading,
-    Bold,
-    Italic,
-    Underline,
-    RemoveFormat,
-    Link,
-    List,
-    Alignment,
-  ],
-  toolbar: [
-    "heading",
-    "|",
-    "bold",
-    "italic",
-    "underline",
-    "removeFormat",
-    "|",
-    "alignment",
-    "|",
-    "bulletedList",
-    "numberedList",
-    "|",
-    "link",
-  ],
-  htmlSupport: {
-    allow: [
-      { name: "div", classes: true, attributes: ["class", "aria-hidden", "contenteditable"] },
-      { name: "img", classes: true, attributes: ["src", "alt", "class", "draggable"] },
-      { name: "p", classes: true },
-      { name: "a", classes: true, attributes: ["href", "target", "rel"] },
-      { name: "ul", classes: true },
-      { name: "li", classes: true },
-      { name: "strong" },
-      { name: "br" },
-    ],
-  },
-};
+import { downloadLetterAsPdf, downloadLetterAsWord } from "../utils/letterExport";
 
 export default function LetterComposer({
   token,
@@ -89,7 +42,6 @@ export default function LetterComposer({
   const [currentLetterId, setCurrentLetterId] = useState(letterId);
   const [draft, setDraft] = useState({
     subject: "",
-    toEmails: "",
     htmlBody: "<p></p>",
     layoutKind: LAYOUT_KIND_BAKOR,
     status: "draft",
@@ -98,9 +50,11 @@ export default function LetterComposer({
   });
   const [loading, setLoading] = useState(Boolean(letterId));
   const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const [editorVersion, setEditorVersion] = useState(0);
+  const [wordStats, setWordStats] = useState({ words: 0, characters: 0 });
+  const [openMenu, setOpenMenu] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -110,8 +64,7 @@ export default function LetterComposer({
   const createStartedRef = useRef(false);
 
   const isFinalized = draft.status === "sent" || draft.status === "confirmed";
-  const isSent = draft.status === "sent";
-  const canEdit = !isFinalized && !saving && !sending && !confirming;
+  const canEdit = !isFinalized && !saving && !confirming;
 
   function resolveOutgoingFields(letterOrDraft) {
     if (letterOrDraft.outgoingNumber > 0 && letterOrDraft.outgoingDate) {
@@ -130,7 +83,6 @@ export default function LetterComposer({
   function mapLetterToDraft(letter) {
     return {
       subject: letter.subject || "",
-      toEmails: letter.toEmails || "",
       htmlBody: letter.htmlBody || "<p></p>",
       layoutKind: letter.layoutKind || LAYOUT_KIND_BAKOR,
       status: letter.status,
@@ -142,6 +94,15 @@ export default function LetterComposer({
   useEffect(() => {
     setEditorReady(true);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      editorRef.current = null;
+      if (toolbarRef.current) {
+        toolbarRef.current.replaceChildren();
+      }
+    };
+  }, [currentLetterId, editorVersion, draft.layoutKind]);
 
   useEffect(() => {
     setCurrentLetterId(letterId);
@@ -215,6 +176,8 @@ export default function LetterComposer({
       fetchLetter(token, currentLetterId)
         .then((letter) => {
           setDraft(mapLetterToDraft(letter));
+          setEditorVersion((current) => current + 1);
+          setWordStats({ words: 0, characters: 0 });
         })
         .catch((requestError) => onError(requestError.message))
         .finally(() => setLoading(false));
@@ -233,11 +196,12 @@ export default function LetterComposer({
       subject: "",
       htmlBody: "<p></p>",
       layoutKind: LAYOUT_KIND_BAKOR,
-      toEmails: "",
     })
       .then((letter) => {
         setCurrentLetterId(letter.id);
         setDraft(mapLetterToDraft(letter));
+        setEditorVersion((current) => current + 1);
+        setWordStats({ words: 0, characters: 0 });
       })
       .catch((requestError) => onError(requestError.message))
       .finally(() => setLoading(false));
@@ -245,10 +209,52 @@ export default function LetterComposer({
 
   function handleEditorReady(editor) {
     editorRef.current = editor;
-    const toolbarElement = editor.ui.view.toolbar.element;
-    if (toolbarRef.current && toolbarElement && toolbarElement.parentNode !== toolbarRef.current) {
-      toolbarRef.current.appendChild(toolbarElement);
+    mountEditorToolbar(editor, toolbarRef);
+  }
+
+  function isCommandEnabled(commandName) {
+    return isEditorCommandEnabled(editorRef, commandName);
+  }
+
+  function printEditorContent() {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
     }
+
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      onError("Браузер заблокировал окно печати.");
+      return;
+    }
+
+    const html = editor.getData();
+    const documentHtml = isBakorLetterLayout(draft.layoutKind)
+      ? buildLetterPrintDocument(html)
+      : `<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Печать письма</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        line-height: 1.6;
+        padding: 40px;
+        color: #1f2933;
+      }
+      img { max-width: 100%; height: auto; }
+      table { width: 100%; border-collapse: collapse; }
+      td, th { border: 1px solid #d5dde6; padding: 8px 10px; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`;
+
+    printWindow.document.write(documentHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   function applyTemplate(templateId) {
@@ -265,7 +271,7 @@ export default function LetterComposer({
     setDraft((current) => {
       const { outgoingNumber, outgoingDate } = resolveOutgoingFields(current);
       const htmlBody = applyOutgoingRequisites(
-        template.htmlBody || "<p></p>",
+        normalizeOutgoingRequisitesInTemplate(template.htmlBody || "<p></p>"),
         outgoingNumber,
         outgoingDate
       );
@@ -278,6 +284,9 @@ export default function LetterComposer({
       if (editorRef.current) {
         editorRef.current.setData(htmlBody);
       }
+
+      setEditorVersion((current) => current + 1);
+      setWordStats({ words: 0, characters: 0 });
 
       return {
         ...current,
@@ -297,14 +306,12 @@ export default function LetterComposer({
       const updated = await updateLetter(token, currentLetterId, {
         folderId: folderId ?? null,
         subject: draft.subject,
-        toEmails: draft.toEmails,
         htmlBody: draft.htmlBody,
         layoutKind: draft.layoutKind,
       });
       setDraft((current) => ({
         ...current,
         subject: updated.subject || "",
-        toEmails: updated.toEmails || "",
         htmlBody: updated.htmlBody || "<p></p>",
         layoutKind: updated.layoutKind || LAYOUT_KIND_BAKOR,
         status: updated.status,
@@ -320,36 +327,6 @@ export default function LetterComposer({
     }
   }
 
-  async function handleSend() {
-    if (!currentLetterId || !canEdit) {
-      return;
-    }
-
-    setSending(true);
-    onError("");
-    try {
-      await updateLetter(token, currentLetterId, {
-        folderId: folderId ?? null,
-        subject: draft.subject,
-        toEmails: draft.toEmails,
-        htmlBody: draft.htmlBody,
-        layoutKind: draft.layoutKind,
-      });
-      const sent = await sendLetter(token, currentLetterId);
-      const nextDraft = mapLetterToDraft(sent);
-      setDraft(nextDraft);
-      if (editorRef.current) {
-        editorRef.current.setData(nextDraft.htmlBody);
-      }
-      onNotice("Письмо отправлено.");
-      onSaved?.();
-    } catch (requestError) {
-      onError(requestError.message);
-    } finally {
-      setSending(false);
-    }
-  }
-
   async function handleConfirm() {
     if (!currentLetterId || !canEdit) {
       return;
@@ -361,7 +338,6 @@ export default function LetterComposer({
       await updateLetter(token, currentLetterId, {
         folderId: folderId ?? null,
         subject: draft.subject,
-        toEmails: draft.toEmails,
         htmlBody: draft.htmlBody,
         layoutKind: draft.layoutKind,
       });
@@ -380,38 +356,73 @@ export default function LetterComposer({
     }
   }
 
-  function printLetterContent() {
-    const html = editorRef.current?.getData() || draft.htmlBody;
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      onError("Браузер заблокировал окно печати.");
-      return;
+  const handleMenuAction = createMenuActionHandler({
+    editorRef,
+    onError,
+    onSave: handleSave,
+    onPrint: printEditorContent,
+    onInsertOutgoingRequisites: () => {
+      if (!canEdit) {
+        return;
+      }
+
+      const { outgoingNumber, outgoingDate } = resolveOutgoingFields(draft);
+      const htmlBody = insertHtmlSnippet(editorRef, OUTGOING_REQUISITES_SNIPPET);
+
+      if (htmlBody) {
+        const nextHtmlBody = applyOutgoingRequisites(
+          normalizeOutgoingRequisitesInTemplate(htmlBody),
+          outgoingNumber,
+          outgoingDate
+        );
+        setDraft((current) => ({ ...current, htmlBody: nextHtmlBody }));
+        if (editorRef.current) {
+          editorRef.current.setData(nextHtmlBody);
+        }
+      }
+    },
+    setOpenMenu,
+  });
+
+  useEffect(() => {
+    function handleSaveShortcut(event) {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
+        return;
+      }
+
+      event.preventDefault();
+      if (canEdit && currentLetterId) {
+        handleSave();
+      }
     }
 
-    const documentHtml = isBakorLetterLayout(draft.layoutKind)
-      ? buildLetterPrintDocument(html)
-      : `<!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <title>Печать письма</title>
-    <style>
-      body {
-        font-family: Arial, Helvetica, sans-serif;
-        line-height: 1.6;
-        padding: 40px;
-        color: #1f2933;
-      }
-      img { max-width: 100%; height: auto; }
-    </style>
-  </head>
-  <body>${html}</body>
-</html>`;
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [canEdit, currentLetterId, draft, folderId, token, saving, confirming]);
 
-    printWindow.document.write(documentHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+  function getLetterHtml() {
+    return editorRef.current?.getData() || draft.htmlBody;
+  }
+
+  function handleDownloadWord() {
+    try {
+      downloadLetterAsWord(getLetterHtml(), {
+        subject: draft.subject,
+        layoutKind: draft.layoutKind,
+      });
+    } catch (requestError) {
+      onError(requestError.message);
+    }
+  }
+
+  function handleDownloadPdf() {
+    try {
+      downloadLetterAsPdf(getLetterHtml(), {
+        layoutKind: draft.layoutKind,
+      });
+    } catch (requestError) {
+      onError(requestError.message);
+    }
   }
 
   async function handleDelete() {
@@ -468,7 +479,7 @@ export default function LetterComposer({
                 <select
                   className="field-input"
                   value={selectedTemplateId}
-                  disabled={templatesLoading || saving || sending || confirming}
+                  disabled={templatesLoading || saving || confirming}
                   onChange={(event) => applyTemplate(event.target.value)}
                 >
                   <option value="">
@@ -482,19 +493,6 @@ export default function LetterComposer({
                 </select>
               </label>
             ) : null}
-
-            <label className="form-field">
-              Кому
-              <input
-                className="field-input"
-                value={draft.toEmails}
-                disabled={!canEdit}
-                placeholder="email@example.com"
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, toEmails: event.target.value }))
-                }
-              />
-            </label>
 
             <label className="form-field">
               Тема письма
@@ -529,7 +527,21 @@ export default function LetterComposer({
             <div className="form-field email-doc-field">
               <span>Текст письма</span>
               <div className="email-doc-editor">
+                <EmailEditorMenubar
+                  openMenu={openMenu}
+                  onToggleMenu={(menuId) =>
+                    setOpenMenu((current) => (current === menuId ? null : menuId))
+                  }
+                  onCloseMenu={() => setOpenMenu(null)}
+                  onMenuAction={handleMenuAction}
+                  canSave={canEdit && Boolean(currentLetterId)}
+                  saving={saving || confirming}
+                  commandEnabled={isCommandEnabled}
+                  variant="letter"
+                />
+
                 <div ref={toolbarRef} className="email-doc-editor__toolbar" />
+
                 <div className="email-doc-editor__workspace">
                   <div
                     className={`email-doc-editor__canvas${
@@ -540,9 +552,14 @@ export default function LetterComposer({
                       isBakorLetterLayout(draft.layoutKind) ? (
                         <LetterTemplate>
                           <CKEditor
-                            key={`${currentLetterId}-${draft.layoutKind}`}
+                            key={`${currentLetterId}-${draft.layoutKind}-${editorVersion}`}
                             editor={DecoupledEditor}
-                            config={editorConfig}
+                            config={createEditorConfig((stats) => {
+                              setWordStats({
+                                words: stats.words,
+                                characters: stats.characters,
+                              });
+                            })}
                             data={draft.htmlBody}
                             disabled={!canEdit}
                             onReady={handleEditorReady}
@@ -552,13 +569,21 @@ export default function LetterComposer({
                                 htmlBody: editor.getData(),
                               }));
                             }}
+                            onError={(editorError) => {
+                              onError(editorError.message || "Не удалось загрузить редактор.");
+                            }}
                           />
                         </LetterTemplate>
                       ) : (
                         <CKEditor
-                          key={`${currentLetterId}-${draft.layoutKind}`}
+                          key={`${currentLetterId}-${draft.layoutKind}-${editorVersion}`}
                           editor={DecoupledEditor}
-                          config={editorConfig}
+                          config={createEditorConfig((stats) => {
+                            setWordStats({
+                              words: stats.words,
+                              characters: stats.characters,
+                            });
+                          })}
                           data={draft.htmlBody}
                           disabled={!canEdit}
                           onReady={handleEditorReady}
@@ -568,12 +593,20 @@ export default function LetterComposer({
                               htmlBody: editor.getData(),
                             }));
                           }}
+                          onError={(editorError) => {
+                            onError(editorError.message || "Не удалось загрузить редактор.");
+                          }}
                         />
                       )
                     ) : (
                       <div className="empty">Загрузка редактора...</div>
                     )}
                   </div>
+                </div>
+
+                <div className="email-doc-editor__statusbar">
+                  <span>Количество слов: {wordStats.words}</span>
+                  <span>Количество символов: {wordStats.characters}</span>
                 </div>
               </div>
             </div>
@@ -586,23 +619,31 @@ export default function LetterComposer({
                   type="button"
                   className="btn cancel"
                   onClick={handleDelete}
-                  disabled={saving || sending || confirming}
+                  disabled={saving || confirming}
                 >
                   Удалить
                 </button>
                 <button
                   type="button"
                   className="btn cancel"
-                  onClick={printLetterContent}
-                  disabled={saving || sending || confirming}
+                  onClick={handleDownloadWord}
+                  disabled={saving || confirming}
                 >
-                  Печать / Word
+                  Скачать Word
+                </button>
+                <button
+                  type="button"
+                  className="btn cancel"
+                  onClick={handleDownloadPdf}
+                  disabled={saving || confirming}
+                >
+                  Скачать PDF
                 </button>
                 <button
                   type="button"
                   className="btn cancel"
                   onClick={handleSave}
-                  disabled={saving || sending || confirming}
+                  disabled={saving || confirming}
                 >
                   {saving ? "Сохранение..." : "Сохранить черновик"}
                 </button>
@@ -610,17 +651,9 @@ export default function LetterComposer({
                   type="button"
                   className="btn primary"
                   onClick={handleConfirm}
-                  disabled={saving || sending || confirming}
+                  disabled={saving || confirming}
                 >
                   {confirming ? "Подтверждение..." : "Подтвердить"}
-                </button>
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={handleSend}
-                  disabled={saving || sending || confirming}
-                >
-                  {sending ? "Отправка..." : "Отправить e-mail"}
                 </button>
               </>
             ) : (
@@ -628,9 +661,16 @@ export default function LetterComposer({
                 <button
                   type="button"
                   className="btn cancel"
-                  onClick={printLetterContent}
+                  onClick={handleDownloadWord}
                 >
-                  Печать / Word
+                  Скачать Word
+                </button>
+                <button
+                  type="button"
+                  className="btn cancel"
+                  onClick={handleDownloadPdf}
+                >
+                  Скачать PDF
                 </button>
                 <button
                   type="button"

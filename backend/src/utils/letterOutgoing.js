@@ -1,8 +1,12 @@
 const OUTGOING_NUMBER_PLACEHOLDER = "{{outgoingNumber}}";
 const OUTGOING_DATE_PLACEHOLDER = "{{outgoingDate}}";
 
+const OUTGOING_NUMBER_PLACEHOLDER_PATTERN = /\{\{\s*outgoingNumber\s*\}\}/gi;
+const OUTGOING_DATE_PLACEHOLDER_PATTERN = /\{\{\s*outgoingDate\s*\}\}/gi;
+
+// Допускает HTML-теги между частями строки (после импорта из DOCX/PDF).
 const OUTGOING_REQUISITES_HTML_PATTERN =
-  /Исх\.\s*№\s*\d+\s*от\s*\d{2}\.\d{2}\.\d{4}/gi;
+  /Исх\.(?:\s|&nbsp;|<[^>]+>)*№(?:\s|&nbsp;|<[^>]+>)*\d+(?:\s|&nbsp;|<[^>]+>)*от(?:\s|&nbsp;|<[^>]+>)*\d{2}\.\d{2}\.\d{4}/gi;
 
 function serializeCalendarDate(value) {
   if (!value) {
@@ -38,6 +42,34 @@ function buildOutgoingRequisitesLine(outgoingNumber, outgoingDate) {
   return `Исх. № ${outgoingNumber} от ${formatOutgoingDate(outgoingDate)}`;
 }
 
+function hasOutgoingRequisitesMarkers(html) {
+  if (!html) {
+    return false;
+  }
+
+  OUTGOING_NUMBER_PLACEHOLDER_PATTERN.lastIndex = 0;
+  OUTGOING_DATE_PLACEHOLDER_PATTERN.lastIndex = 0;
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
+
+  return (
+    OUTGOING_NUMBER_PLACEHOLDER_PATTERN.test(html) ||
+    OUTGOING_DATE_PLACEHOLDER_PATTERN.test(html) ||
+    OUTGOING_REQUISITES_HTML_PATTERN.test(html)
+  );
+}
+
+function normalizeOutgoingRequisitesInTemplate(html) {
+  if (!html) {
+    return html || "";
+  }
+
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
+  return html.replace(
+    OUTGOING_REQUISITES_HTML_PATTERN,
+    `Исх. № ${OUTGOING_NUMBER_PLACEHOLDER} от ${OUTGOING_DATE_PLACEHOLDER}`
+  );
+}
+
 function applyOutgoingRequisites(html, outgoingNumber, outgoingDate) {
   if (!html || !outgoingNumber || !outgoingDate) {
     return html || "";
@@ -47,9 +79,10 @@ function applyOutgoingRequisites(html, outgoingNumber, outgoingDate) {
   const formattedDate = formatOutgoingDate(outgoingDate);
 
   let result = html
-    .split(OUTGOING_NUMBER_PLACEHOLDER).join(String(outgoingNumber))
-    .split(OUTGOING_DATE_PLACEHOLDER).join(formattedDate);
+    .replace(OUTGOING_NUMBER_PLACEHOLDER_PATTERN, String(outgoingNumber))
+    .replace(OUTGOING_DATE_PLACEHOLDER_PATTERN, formattedDate);
 
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
   result = result.replace(OUTGOING_REQUISITES_HTML_PATTERN, line);
 
   return result;
@@ -61,5 +94,7 @@ module.exports = {
   serializeCalendarDate,
   formatOutgoingDate,
   buildOutgoingRequisitesLine,
+  hasOutgoingRequisitesMarkers,
+  normalizeOutgoingRequisitesInTemplate,
   applyOutgoingRequisites,
 };

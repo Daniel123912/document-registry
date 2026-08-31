@@ -1,7 +1,4 @@
 const { query, withTransaction } = require("../db");
-const { sendMail } = require("./mail");
-const { htmlToPlainText } = require("./emailTemplates");
-const { composeLetterHtml, isBakorLetterLayout } = require("../utils/letterLayout");
 const { applyOutgoingRequisites, serializeCalendarDate } = require("../utils/letterOutgoing");
 
 const LAYOUT_KINDS = ["default", "bakor_letter"];
@@ -233,7 +230,7 @@ async function updateLetter(
     throw httpError(404, "Письмо не найдено.");
   }
   if (FINALIZED_STATUSES.includes(current.status)) {
-    throw httpError(400, "Подтверждённое или отправленное письмо нельзя редактировать.");
+    throw httpError(400, "Подтверждённое письмо нельзя редактировать.");
   }
 
   const nextFolderId = folderId === undefined ? current.folderId : parseFolderId(folderId);
@@ -311,68 +308,6 @@ async function confirmLetter(letterId) {
   return getLetter(letterId);
 }
 
-async function sendLetter(letterId) {
-  const current = await getLetter(letterId);
-  if (!current) {
-    throw httpError(404, "Письмо не найдено.");
-  }
-  if (current.status === "sent") {
-    throw httpError(400, "Письмо уже отправлено.");
-  }
-  if (current.status === "confirmed") {
-    throw httpError(400, "Письмо уже подтверждено. Отправка по e-mail недоступна.");
-  }
-
-  const trimmedSubject = String(current.subject || "").trim();
-  const trimmedTo = String(current.toEmails || "").trim();
-  const trimmedBody = String(current.htmlBody || "").trim();
-
-  if (!trimmedSubject) {
-    throw httpError(400, "Укажите тему письма.");
-  }
-  if (!trimmedTo) {
-    throw httpError(400, "Укажите адрес получателя.");
-  }
-  if (!trimmedBody) {
-    throw httpError(400, "Заполните текст письма.");
-  }
-
-  await withTransaction(async (client) => {
-    const row = await getLetterRow(client, letterId);
-    if (!row) {
-      throw httpError(404, "Письмо не найдено.");
-    }
-
-    await finalizeOutgoing(client, row);
-  });
-
-  const finalized = await getLetter(letterId);
-  const html = isBakorLetterLayout(finalized.layoutKind)
-    ? composeLetterHtml(finalized.htmlBody)
-    : finalized.htmlBody;
-  const text = htmlToPlainText(html);
-
-  await sendMail({
-    to: trimmedTo,
-    subject: trimmedSubject,
-    html,
-    text,
-  });
-
-  await query(
-    `
-      UPDATE letters
-      SET status = 'sent',
-          sent_at = NOW(),
-          updated_at = NOW()
-      WHERE id = $1
-    `,
-    [letterId]
-  );
-
-  return getLetter(letterId);
-}
-
 module.exports = {
   LAYOUT_KINDS,
   STATUSES,
@@ -384,5 +319,4 @@ module.exports = {
   updateLetter,
   deleteLetter,
   confirmLetter,
-  sendLetter,
 };

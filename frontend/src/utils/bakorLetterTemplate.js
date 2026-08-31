@@ -3,8 +3,14 @@ export const LAYOUT_KIND_BAKOR = "bakor_letter";
 export const OUTGOING_NUMBER_PLACEHOLDER = "{{outgoingNumber}}";
 export const OUTGOING_DATE_PLACEHOLDER = "{{outgoingDate}}";
 
+export const OUTGOING_REQUISITES_SNIPPET =
+  `<p><strong>Исх. № ${OUTGOING_NUMBER_PLACEHOLDER} от ${OUTGOING_DATE_PLACEHOLDER}</strong></p>`;
+
+const OUTGOING_NUMBER_PLACEHOLDER_PATTERN = /\{\{\s*outgoingNumber\s*\}\}/gi;
+const OUTGOING_DATE_PLACEHOLDER_PATTERN = /\{\{\s*outgoingDate\s*\}\}/gi;
+
 const OUTGOING_REQUISITES_HTML_PATTERN =
-  /Исх\.\s*№\s*\d+\s*от\s*\d{2}\.\d{2}\.\d{4}/gi;
+  /Исх\.(?:\s|&nbsp;|<[^>]+>)*№(?:\s|&nbsp;|<[^>]+>)*\d+(?:\s|&nbsp;|<[^>]+>)*от(?:\s|&nbsp;|<[^>]+>)*\d{2}\.\d{2}\.\d{4}/gi;
 
 export const LETTER_PAGE_HEIGHT_MM = 297;
 export const LETTER_PAGE_GAP_PX = 24;
@@ -257,6 +263,34 @@ export function buildOutgoingRequisitesLine(outgoingNumber, outgoingDate) {
   return `Исх. № ${outgoingNumber} от ${formatOutgoingDate(outgoingDate)}`;
 }
 
+export function hasOutgoingRequisitesMarkers(html) {
+  if (!html) {
+    return false;
+  }
+
+  OUTGOING_NUMBER_PLACEHOLDER_PATTERN.lastIndex = 0;
+  OUTGOING_DATE_PLACEHOLDER_PATTERN.lastIndex = 0;
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
+
+  return (
+    OUTGOING_NUMBER_PLACEHOLDER_PATTERN.test(html) ||
+    OUTGOING_DATE_PLACEHOLDER_PATTERN.test(html) ||
+    OUTGOING_REQUISITES_HTML_PATTERN.test(html)
+  );
+}
+
+export function normalizeOutgoingRequisitesInTemplate(html) {
+  if (!html) {
+    return html || "";
+  }
+
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
+  return html.replace(
+    OUTGOING_REQUISITES_HTML_PATTERN,
+    `Исх. № ${OUTGOING_NUMBER_PLACEHOLDER} от ${OUTGOING_DATE_PLACEHOLDER}`
+  );
+}
+
 export function applyOutgoingRequisites(html, outgoingNumber, outgoingDate) {
   if (!html || !outgoingNumber || !outgoingDate) {
     return html || "";
@@ -266,9 +300,10 @@ export function applyOutgoingRequisites(html, outgoingNumber, outgoingDate) {
   const formattedDate = formatOutgoingDate(outgoingDate);
 
   let result = html
-    .replaceAll(OUTGOING_NUMBER_PLACEHOLDER, String(outgoingNumber))
-    .replaceAll(OUTGOING_DATE_PLACEHOLDER, formattedDate);
+    .replace(OUTGOING_NUMBER_PLACEHOLDER_PATTERN, String(outgoingNumber))
+    .replace(OUTGOING_DATE_PLACEHOLDER_PATTERN, formattedDate);
 
+  OUTGOING_REQUISITES_HTML_PATTERN.lastIndex = 0;
   result = result.replace(OUTGOING_REQUISITES_HTML_PATTERN, line);
 
   return result;

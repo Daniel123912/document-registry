@@ -1,10 +1,7 @@
 import { formatDate } from "../utils/dates";
 
 function statusLabel(status) {
-  if (status === "sent") {
-    return "Отправлено";
-  }
-  if (status === "confirmed") {
+  if (status === "sent" || status === "confirmed") {
     return "Подтверждено";
   }
   return "Черновик";
@@ -34,7 +31,6 @@ export default function LettersList({
           <thead>
             <tr>
               <th>Тема</th>
-              <th>Получатель</th>
               <th>Статус</th>
               <th>Дата</th>
               <th className="doc-table-actions-col" />
@@ -47,7 +43,6 @@ export default function LettersList({
                   <div className="doc-name">{letter.subject || "Без темы"}</div>
                   <div className="doc-sub">{letter.authorName}</div>
                 </td>
-                <td>{letter.toEmails || "—"}</td>
                 <td>
                   <span className={`status ${letter.status === "draft" ? "warn" : "ok"}`}>
                     {statusLabel(letter.status)}

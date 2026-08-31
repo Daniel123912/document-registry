@@ -1,5 +1,6 @@
 const { query, withTransaction } = require("../db");
 const { composeLetterHtml, isBakorLetterLayout } = require("../utils/letterLayout");
+const { normalizeOutgoingRequisitesInTemplate } = require("../utils/letterOutgoing");
 
 const TRIGGER_KINDS = ["publish", "new_version"];
 const LAYOUT_KINDS = ["default", "bakor_letter"];
@@ -201,7 +202,8 @@ async function createEmailTemplate({
 
   const trimmedName = String(name || "").trim();
   const trimmedSubject = String(subject || "").trim();
-  if (!trimmedName || !trimmedSubject || !String(htmlBody || "").trim()) {
+  const normalizedHtmlBody = normalizeOutgoingRequisitesInTemplate(String(htmlBody || "").trim());
+  if (!trimmedName || !trimmedSubject || !normalizedHtmlBody) {
     throw httpError(400, "Заполните название, тему и текст шаблона.");
   }
 
@@ -218,7 +220,7 @@ async function createEmailTemplate({
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id, folder_id, trigger_kind, layout_kind, name, subject, html_body, is_default, updated_at
       `,
-      [folderId, triggerKind, layoutKind, trimmedName, trimmedSubject, htmlBody, Boolean(isDefault)]
+      [folderId, triggerKind, layoutKind, trimmedName, trimmedSubject, normalizedHtmlBody, Boolean(isDefault)]
     );
 
     return mapRow(created.rows[0]);
@@ -240,7 +242,10 @@ async function updateEmailTemplate(
     const nextLayoutKind = layoutKind === undefined ? current.layoutKind : layoutKind;
     const nextName = name === undefined ? current.name : String(name || "").trim();
     const nextSubject = subject === undefined ? current.subject : String(subject || "").trim();
-    const nextHtmlBody = htmlBody === undefined ? current.htmlBody : htmlBody;
+    const nextHtmlBody =
+      htmlBody === undefined
+        ? current.htmlBody
+        : normalizeOutgoingRequisitesInTemplate(String(htmlBody || "").trim());
     const nextIsDefault = isDefault === undefined ? current.isDefault : Boolean(isDefault);
 
     if (!TRIGGER_KINDS.includes(nextTriggerKind)) {

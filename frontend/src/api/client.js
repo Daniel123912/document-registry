@@ -162,13 +162,6 @@ export async function updateLetter(token, letterId, payload) {
   });
 }
 
-export async function sendLetter(token, letterId) {
-  return request(`/letters/${letterId}/send`, {
-    method: "POST",
-    headers: authHeaders(token),
-  });
-}
-
 export async function confirmLetter(token, letterId) {
   return request(`/letters/${letterId}/confirm`, {
     method: "POST",
