@@ -1,5 +1,6 @@
 import { SORT_OPTIONS, typeLabel } from "../constants";
 import { daysUntilTrashPurge, formatDate } from "../utils/dates";
+
 export default function DocumentList({
   listTitle,
   section,
@@ -18,7 +19,8 @@ export default function DocumentList({
       {section === "trash" ? (
         <p className="list-hint">Документы хранятся 30 дней, после чего удаляются безвозвратно.</p>
       ) : null}
-      <div className="toolbar">        <input
+      <div className="toolbar">
+        <input
           className="search-input"
           placeholder="Поиск по названию или номеру"
           value={search}
@@ -52,7 +54,8 @@ export default function DocumentList({
                 <th>Осталось</th>
               </>
             ) : null}
-            {section === "inbox" ? <th>Статус</th> : null}          </tr>
+            {section === "inbox" ? <th>Статус</th> : null}
+          </tr>
         </thead>
         <tbody>
           {visibleDocuments.map((document) => (
@@ -73,7 +76,8 @@ export default function DocumentList({
                   <td>{daysUntilTrashPurge(document.deletedAt)} дн.</td>
                 </>
               ) : null}
-              {section === "inbox" ? (                <td>
+              {section === "inbox" ? (
+                <td>
                   <span className={`status ${document.isAcknowledged ? "ok" : "warn"}`}>
                     {document.isAcknowledged ? "Ознакомлен" : "Ожидается"}
                   </span>
@@ -96,6 +100,7 @@ export default function DocumentList({
                   ? "Ничего не найдено"
                   : "Документов этого типа пока нет"}
         </div>
-      ) : null}    </section>
+      ) : null}
+    </section>
   );
 }

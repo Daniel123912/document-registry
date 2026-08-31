@@ -58,6 +58,131 @@ export async function fetchReport(token) {
   });
 }
 
+export async function fetchEmailTemplates(token, folderId) {
+  const query =
+    folderId === undefined
+      ? ""
+      : folderId == null
+        ? "?folderId=null"
+        : `?folderId=${encodeURIComponent(folderId)}`;
+  return request(`/email-templates${query}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createEmailTemplate(token, payload) {
+  return request("/email-templates", {
+    method: "POST",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateEmailTemplate(token, templateId, payload) {
+  return request(`/email-templates/${templateId}`, {
+    method: "PUT",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteEmailTemplate(token, templateId) {
+  return request(`/email-templates/${templateId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+export async function fetchEmailTemplateFolders(token) {
+  return request("/email-template-folders", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createEmailTemplateFolder(token, payload) {
+  return request("/email-template-folders", {
+    method: "POST",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateEmailTemplateFolder(token, folderId, payload) {
+  return request(`/email-template-folders/${folderId}`, {
+    method: "PATCH",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteEmailTemplateFolder(token, folderId) {
+  return request(`/email-template-folders/${folderId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
+export async function fetchLetters(token, folderId) {
+  const query =
+    folderId === undefined
+      ? ""
+      : folderId == null
+        ? "?folderId=null"
+        : `?folderId=${encodeURIComponent(folderId)}`;
+  return request(`/letters${query}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function fetchLetter(token, letterId) {
+  return request(`/letters/${letterId}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export async function fetchNextOutgoingNumber(token) {
+  return request("/letters/next-outgoing", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createLetter(token, payload) {
+  return request("/letters", {
+    method: "POST",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateLetter(token, letterId, payload) {
+  return request(`/letters/${letterId}`, {
+    method: "PUT",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function sendLetter(token, letterId) {
+  return request(`/letters/${letterId}/send`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export async function confirmLetter(token, letterId) {
+  return request(`/letters/${letterId}/confirm`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
+export async function deleteLetter(token, letterId) {
+  return request(`/letters/${letterId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
 export async function createDocument(token, formData) {
   return request("/documents", {
     method: "POST",

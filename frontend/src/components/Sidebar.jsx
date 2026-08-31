@@ -104,6 +104,77 @@ function FolderBranch({
   );
 }
 
+function EmailFolderBranch({
+  folders,
+  parentId,
+  lettersFolderId,
+  section,
+  expandedFolders,
+  isResponsible,
+  onSelectLettersFolder,
+  onToggleLettersFolder,
+  onEmailFolderContextMenu,
+  contextEmailFolderId,
+}) {
+  const byParent = useMemo(() => buildFolderChildrenMap(folders), [folders]);
+  const children = byParent.get(parentId == null ? "root" : String(parentId)) || [];
+
+  if (!children.length) {
+    return null;
+  }
+
+  return (
+    <div className="nav-tree-children">
+      {children.map((folder) => {
+        const hasChildren = (byParent.get(String(folder.id)) || []).length > 0;
+        const isExpanded = expandedFolders.has(folder.id);
+        const isActive = section === "letters" && lettersFolderId === folder.id;
+
+        return (
+          <div key={folder.id} className="nav-tree-branch">
+            <div
+              className={navTreeRowClass({
+                active: isActive,
+                menuOpen: contextEmailFolderId === folder.id,
+              })}
+              onContextMenu={
+                isResponsible ? (event) => onEmailFolderContextMenu(event, folder) : undefined
+              }
+            >
+              <TreeToggle
+                visible={hasChildren}
+                open={isExpanded}
+                onClick={() => onToggleLettersFolder(folder.id)}
+              />
+              <button
+                type="button"
+                className="nav-tree-name"
+                onClick={() => onSelectLettersFolder(folder.id)}
+              >
+                {folder.name}
+              </button>
+            </div>
+            {isExpanded ? (
+              <EmailFolderBranch
+                folders={folders}
+                parentId={folder.id}
+                lettersFolderId={lettersFolderId}
+                section={section}
+                expandedFolders={expandedFolders}
+                isResponsible={isResponsible}
+                onSelectLettersFolder={onSelectLettersFolder}
+                onToggleLettersFolder={onToggleLettersFolder}
+                onEmailFolderContextMenu={onEmailFolderContextMenu}
+                contextEmailFolderId={contextEmailFolderId}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Sidebar({
   user,
   isResponsible,
@@ -112,6 +183,9 @@ export default function Sidebar({
   activeFolderId,
   activeOpen,
   folders,
+  lettersOpen,
+  lettersFolderId,
+  emailTemplateFolders,
   onToggleActive,
   onInbox,
   onSelectType,
@@ -122,6 +196,14 @@ export default function Sidebar({
   onArchive,
   onTrash,
   onReport,
+  onLetters,
+  onToggleLetters,
+  onSelectLettersFolder,
+  onCreateEmailFolder,
+  onRenameEmailFolder,
+  onDeleteEmailFolder,
+  onAddLetterTemplate,
+  onComposeLetter,
   onCreate,
   onLogout,
   inboxPendingCount = 0,
@@ -129,6 +211,7 @@ export default function Sidebar({
   const [workOpen, setWorkOpen] = useState(true);
   const [expandedTypes, setExpandedTypes] = useState(() => new Set());
   const [expandedFolders, setExpandedFolders] = useState(() => new Set());
+  const [expandedEmailFolders, setExpandedEmailFolders] = useState(() => new Set());
   const [contextMenu, setContextMenu] = useState(null);
   const contextMenuRef = useRef(null);
 
@@ -179,6 +262,33 @@ export default function Sidebar({
     });
   }, [activeFolderId, folders]);
 
+  useEffect(() => {
+    if (lettersFolderId == null) {
+      return;
+    }
+    const byId = new Map(emailTemplateFolders.map((folder) => [folder.id, folder]));
+    const ancestors = [];
+    let current = byId.get(lettersFolderId);
+    while (current?.parentId != null) {
+      ancestors.push(current.parentId);
+      current = byId.get(current.parentId);
+    }
+    if (!ancestors.length) {
+      return;
+    }
+    setExpandedEmailFolders((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const id of ancestors) {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [emailTemplateFolders, lettersFolderId]);
+
   function toggleTypeFolders(type) {
     setExpandedTypes((current) => {
       const next = new Set(current);
@@ -203,11 +313,23 @@ export default function Sidebar({
     });
   }
 
+  function toggleLettersFolder(folderId) {
+    setExpandedEmailFolders((current) => {
+      const next = new Set(current);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  }
+
   function openContextMenu(event, menu) {
     event.preventDefault();
     event.stopPropagation();
     const menuWidth = 210;
-    const menuHeight = menu.kind === "folder" ? 132 : 48;
+    const menuHeight = menu.kind === "folder" || menu.kind === "email-folder" ? 132 : 48;
     setContextMenu({
       ...menu,
       x: Math.min(event.clientX, window.innerWidth - menuWidth),
@@ -246,6 +368,8 @@ export default function Sidebar({
       window.removeEventListener("resize", closeMenu);
     };
   }, [contextMenu]);
+
+  const lettersRootActive = section === "letters" && lettersFolderId == null;
 
   return (
     <aside className="sidebar">
@@ -392,6 +516,50 @@ export default function Sidebar({
                   <span className="nav-tree-name">Отчеты</span>
                 </button>
               ) : null}
+
+              {isResponsible ? (
+                <div className="nav-tree-branch">
+                  <div
+                    className={navTreeRowClass({
+                      active: lettersRootActive,
+                      menuOpen: contextMenu?.kind === "letters-root",
+                    })}
+                    onContextMenu={
+                      isResponsible
+                        ? (event) => openContextMenu(event, { kind: "letters-root" })
+                        : undefined
+                    }
+                  >
+                    <TreeToggle
+                      visible={emailTemplateFolders.length > 0}
+                      open={lettersOpen}
+                      onClick={onToggleLetters}
+                    />
+                    <button type="button" className="nav-tree-name" onClick={onLetters}>
+                      Письма
+                    </button>
+                  </div>
+
+                  {lettersOpen ? (
+                    <EmailFolderBranch
+                      folders={emailTemplateFolders}
+                      parentId={null}
+                      lettersFolderId={lettersFolderId}
+                      section={section}
+                      expandedFolders={expandedEmailFolders}
+                      isResponsible={isResponsible}
+                      onSelectLettersFolder={onSelectLettersFolder}
+                      onToggleLettersFolder={toggleLettersFolder}
+                      onEmailFolderContextMenu={(event, folder) =>
+                        openContextMenu(event, { kind: "email-folder", folder })
+                      }
+                      contextEmailFolderId={
+                        contextMenu?.kind === "email-folder" ? contextMenu.folder.id : null
+                      }
+                    />
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -413,20 +581,67 @@ export default function Sidebar({
           role="menu"
           onContextMenu={(event) => event.preventDefault()}
         >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              if (contextMenu.kind === "folder") {
-                onCreateFolder(contextMenu.folder.type, contextMenu.folder.id);
-              } else {
-                onCreateFolder(contextMenu.type, null);
-              }
-              setContextMenu(null);
-            }}
-          >
-            Добавить папку
-          </button>
+          {contextMenu.kind === "letters-root" || contextMenu.kind === "email-folder" ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (contextMenu.kind === "email-folder") {
+                    onAddLetterTemplate(contextMenu.folder.id);
+                  } else {
+                    onAddLetterTemplate(null);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                Добавить шаблон
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (contextMenu.kind === "email-folder") {
+                    onComposeLetter(contextMenu.folder.id);
+                  } else {
+                    onComposeLetter(null);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                Написать письмо
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  if (contextMenu.kind === "email-folder") {
+                    onCreateEmailFolder(contextMenu.folder.id);
+                  } else {
+                    onCreateEmailFolder(null);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                Добавить папку
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                if (contextMenu.kind === "folder") {
+                  onCreateFolder(contextMenu.folder.type, contextMenu.folder.id);
+                } else {
+                  onCreateFolder(contextMenu.type, null);
+                }
+                setContextMenu(null);
+              }}
+            >
+              Добавить папку
+            </button>
+          )}
           {contextMenu.kind === "folder" ? (
             <>
               <button
@@ -445,6 +660,31 @@ export default function Sidebar({
                 className="danger"
                 onClick={() => {
                   onDeleteFolder(contextMenu.folder);
+                  setContextMenu(null);
+                }}
+              >
+                Удалить
+              </button>
+            </>
+          ) : null}
+          {contextMenu.kind === "email-folder" ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onRenameEmailFolder(contextMenu.folder);
+                  setContextMenu(null);
+                }}
+              >
+                Переименовать
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  onDeleteEmailFolder(contextMenu.folder);
                   setContextMenu(null);
                 }}
               >

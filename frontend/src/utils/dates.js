@@ -24,15 +24,17 @@ export function toIsoDateValue(value) {
   if (!value) {
     return "";
   }
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return value.slice(0, 10);
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function daysUntilTrashPurge(deletedAt, retentionDays = 30) {

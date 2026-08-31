@@ -1,17 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import "./styles/app.css";
 import {
   acknowledgeDocument,
   archiveDocument,
   createDocument,
   createFolder,
+  createEmailTemplateFolder,
   createVersion,
   deleteDocument,
   deleteVersion,
   deleteFolder,
+  deleteEmailTemplateFolder,
+  deleteLetter,
   fetchAssignedDocuments,
   fetchDocuments,
   fetchFolders,
+  fetchEmailTemplateFolders,
+  fetchLetters,
   fetchReport,
   fetchTrashDocuments,
   fetchUsers,
@@ -22,6 +27,7 @@ import {
   unarchiveDocument,
   updateDocument,
   updateFolder,
+  updateEmailTemplateFolder,
 } from "./api/client";
 import { withReadableFilenames } from "./utils/filenames";
 import { addDays, toIsoDate } from "./utils/dates";
@@ -31,6 +37,9 @@ import LoginPage from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import DocumentList from "./components/DocumentList";
 import ReportTable from "./components/ReportTable";
+import LettersList from "./components/LettersList";
+import LetterComposer from "./components/LetterComposer";
+const EmailTemplatesEditor = lazy(() => import("./components/EmailTemplatesEditor"));
 import CreateDocumentModal from "./components/CreateDocumentModal";
 import DocumentPage from "./components/DocumentPage";
 import PromptModal from "./components/PromptModal";
@@ -102,11 +111,20 @@ function App() {
   const [activeType, setActiveType] = useState("other");
   const [activeFolderId, setActiveFolderId] = useState(null);
   const [activeOpen, setActiveOpen] = useState(true);
+  const [lettersOpen, setLettersOpen] = useState(true);
+  const [lettersFolderId, setLettersFolderId] = useState(null);
+  const [lettersView, setLettersView] = useState("list");
+  const [activeLetterId, setActiveLetterId] = useState(null);
+  const [letters, setLetters] = useState([]);
+  const [lettersLoading, setLettersLoading] = useState(false);
+  const [templateAutoCreate, setTemplateAutoCreate] = useState(false);
+  const [lettersComposeKey, setLettersComposeKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [documents, setDocuments] = useState([]);
   const [assignedDocuments, setAssignedDocuments] = useState([]);
   const [trashDocuments, setTrashDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
+  const [emailTemplateFolders, setEmailTemplateFolders] = useState([]);
   const [reportRows, setReportRows] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState(null);
@@ -145,6 +163,16 @@ function App() {
     if (section === "report") {
       return "Отчет по ознакомлению";
     }
+    if (section === "letters") {
+      const path = folderPathLabels(emailTemplateFolders, lettersFolderId);
+      if (lettersView === "templates") {
+        return path.length ? `Шаблоны писем: ${path.join(" / ")}` : "Шаблоны писем";
+      }
+      if (lettersView === "compose") {
+        return activeLetterId ? "Письмо" : "Новое письмо";
+      }
+      return path.length ? `Письма: ${path.join(" / ")}` : "Письма";
+    }
     if (section === "archive") {
       return "Список документов: Архив";
     }
@@ -156,7 +184,7 @@ function App() {
       return `Список документов: ${typeLabel(activeType)} / ${path.join(" / ")}`;
     }
     return `Список документов: ${typeLabel(activeType)}`;
-  }, [activeFolderId, activeType, folders, section]);
+  }, [activeFolderId, activeType, activeLetterId, emailTemplateFolders, folders, lettersFolderId, lettersView, section]);
 
   const visibleDocuments = useMemo(() => {
     if (section === "trash") {
@@ -250,7 +278,12 @@ function App() {
       ];
 
       if (currentUser.role === "responsible") {
-        requests.push(fetchReport(currentToken), fetchUsers(currentToken), fetchTrashDocuments(currentToken));
+        requests.push(
+          fetchReport(currentToken),
+          fetchUsers(currentToken),
+          fetchTrashDocuments(currentToken),
+          fetchEmailTemplateFolders(currentToken)
+        );
       }
 
       const [
@@ -260,6 +293,7 @@ function App() {
         reportData = [],
         usersData = [],
         trashData = [],
+        emailFoldersData = [],
       ] = await Promise.all(requests);
 
       const nextDocuments = asArray(documentsData).map(withReadableFilenames);
@@ -269,6 +303,7 @@ function App() {
       setDocuments(nextDocuments);
       setAssignedDocuments(nextAssigned);
       setFolders(asArray(foldersData));
+      setEmailTemplateFolders(asArray(emailFoldersData));
       setReportRows(asArray(reportData));
       setUsers(asArray(usersData));
       setTrashDocuments(nextTrash);
@@ -363,6 +398,7 @@ function App() {
     setAssignedDocuments([]);
     setTrashDocuments([]);
     setFolders([]);
+    setEmailTemplateFolders([]);
     setReportRows([]);
     setUsers([]);
     setActiveFolderId(null);
@@ -621,12 +657,123 @@ function App() {
     });
   }
 
+  function handleCreateEmailFolder(parentId) {
+    openPrompt({
+      kind: "create-email-folder",
+      title: parentId ? "Создать подпапку" : "Создать папку",
+      inputLabel: "Название папки",
+      confirmLabel: "Создать",
+      parentId,
+    });
+  }
+
+  function handleRenameEmailFolder(folder) {
+    openPrompt({
+      kind: "rename-email-folder",
+      title: "Переименовать папку",
+      inputLabel: "Название папки",
+      defaultValue: folder.name,
+      confirmLabel: "Сохранить",
+      folder,
+    });
+  }
+
+  function handleDeleteEmailFolder(folder) {
+    openPrompt({
+      kind: "delete-email-folder",
+      title: "Удалить папку",
+      description: `Удалить папку «${folder.name}»? Шаблоны и вложенные папки останутся у родителя.`,
+      confirmLabel: "Удалить",
+      danger: true,
+      folder,
+    });
+  }
+
+  function selectLettersFolder(folderId) {
+    setSection("letters");
+    setLettersFolderId(folderId);
+    setLettersView("list");
+    setActiveLetterId(null);
+    setTemplateAutoCreate(false);
+    setLettersOpen(true);
+    setSelectedDocumentId(null);
+  }
+
+  function openLettersList(folderId = lettersFolderId) {
+    setSection("letters");
+    setLettersFolderId(folderId ?? null);
+    setLettersView("list");
+    setActiveLetterId(null);
+    setTemplateAutoCreate(false);
+    setLettersOpen(true);
+    setSelectedDocumentId(null);
+  }
+
+  function openLetterTemplates(folderId, autoCreate = false) {
+    setSection("letters");
+    setLettersFolderId(folderId ?? null);
+    setLettersView("templates");
+    setActiveLetterId(null);
+    setTemplateAutoCreate(autoCreate);
+    setLettersOpen(true);
+    setSelectedDocumentId(null);
+  }
+
+  function handleDeleteLetter(letter) {
+    openPrompt({
+      kind: "delete-letter",
+      title: "Удалить письмо",
+      description: `Удалить письмо «${letter.subject || "Без темы"}»? Это действие нельзя отменить.`,
+      confirmLabel: "Удалить",
+      danger: true,
+      letterId: letter.id,
+    });
+  }
+
+  function openLetterCompose(folderId, letterId = null) {
+    setSection("letters");
+    setLettersFolderId(folderId ?? null);
+    setLettersView("compose");
+    setActiveLetterId(letterId);
+    setTemplateAutoCreate(false);
+    setLettersComposeKey((current) => current + 1);
+    setLettersOpen(true);
+    setSelectedDocumentId(null);
+  }
+
+  async function loadLetters(currentToken = token, folderId = lettersFolderId) {
+    if (!currentToken || !isResponsible) {
+      return;
+    }
+
+    setLettersLoading(true);
+    try {
+      const rows = await fetchLetters(currentToken, folderId ?? null);
+      setLetters(Array.isArray(rows) ? rows : []);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLettersLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (section === "letters" && lettersView === "list" && token && isResponsible) {
+      loadLetters();
+    }
+  }, [section, lettersView, lettersFolderId, token, isResponsible]);
+
   async function submitPrompt(value) {
     if (!prompt) {
       return;
     }
 
-    if (prompt.kind === "create-folder" || prompt.kind === "rename-folder") {
+    if (
+      prompt.kind === "create-folder" ||
+      prompt.kind === "rename-folder" ||
+      prompt.kind === "create-email-folder" ||
+      prompt.kind === "rename-email-folder"
+    ) {
       const trimmed = String(value || "").trim();
       if (!trimmed) {
         setError("Укажите название папки.");
@@ -647,8 +794,21 @@ function App() {
           setActiveType(prompt.type);
           setActiveFolderId(folder.id);
           setActiveOpen(true);
-        } else {
+        } else if (prompt.kind === "rename-folder") {
           await updateFolder(token, prompt.folder.id, { name: trimmed });
+          setNotice("Папка переименована.");
+        } else if (prompt.kind === "create-email-folder") {
+          const folder = await createEmailTemplateFolder(token, {
+            name: trimmed,
+            parentId: prompt.parentId == null ? null : prompt.parentId,
+          });
+          setNotice("Папка создана.");
+          setSection("letters");
+          setLettersFolderId(folder.id);
+          setLettersView("list");
+          setLettersOpen(true);
+        } else {
+          await updateEmailTemplateFolder(token, prompt.folder.id, { name: trimmed });
           setNotice("Папка переименована.");
         }
         setPrompt(null);
@@ -670,6 +830,12 @@ function App() {
           setActiveFolderId(prompt.folder.parentId == null ? null : prompt.folder.parentId);
         }
         setNotice("Папка удалена.");
+      } else if (prompt.kind === "delete-email-folder") {
+        await deleteEmailTemplateFolder(token, prompt.folder.id);
+        if (lettersFolderId === prompt.folder.id) {
+          setLettersFolderId(prompt.folder.parentId == null ? null : prompt.folder.parentId);
+        }
+        setNotice("Папка удалена.");
       } else if (prompt.kind === "delete-document") {
         const result = await deleteDocument(token, prompt.documentId);
         setNotice(result.message);
@@ -681,6 +847,14 @@ function App() {
       } else if (prompt.kind === "delete-version") {
         const result = await deleteVersion(token, prompt.documentId, prompt.versionNo);
         setNotice(result.message);
+      } else if (prompt.kind === "delete-letter") {
+        await deleteLetter(token, prompt.letterId);
+        if (activeLetterId === prompt.letterId) {
+          setActiveLetterId(null);
+          setLettersView("list");
+        }
+        setNotice("Письмо удалено.");
+        await loadLetters();
       }
       setPrompt(null);
       await loadData();
@@ -713,6 +887,9 @@ function App() {
         activeFolderId={activeFolderId}
         activeOpen={activeOpen}
         folders={folders}
+        lettersOpen={lettersOpen}
+        lettersFolderId={lettersFolderId}
+        emailTemplateFolders={emailTemplateFolders}
         onToggleActive={() => setActiveOpen((current) => !current)}
         onInbox={() => {
           setSection("inbox");
@@ -735,6 +912,14 @@ function App() {
           setSection("report");
           setSelectedDocumentId(null);
         }}
+        onLetters={() => openLettersList(null)}
+        onToggleLetters={() => setLettersOpen((current) => !current)}
+        onSelectLettersFolder={selectLettersFolder}
+        onCreateEmailFolder={handleCreateEmailFolder}
+        onRenameEmailFolder={handleRenameEmailFolder}
+        onDeleteEmailFolder={handleDeleteEmailFolder}
+        onAddLetterTemplate={(folderId) => openLetterTemplates(folderId, true)}
+        onComposeLetter={(folderId) => openLetterCompose(folderId)}
         onCreate={openCreateModal}
         onLogout={logout}
         inboxPendingCount={inboxPendingCount}
@@ -746,6 +931,47 @@ function App() {
 
         {section === "report" && isResponsible ? (
           <ReportTable listTitle={listTitle} reportRows={reportRows} />
+        ) : section === "letters" && isResponsible ? (
+          lettersView === "templates" ? (
+            <Suspense
+              fallback={
+                <section className="list-card">
+                  <h2 className="list-title">{listTitle}</h2>
+                  <div className="empty">Загрузка редактора...</div>
+                </section>
+              }
+            >
+              <EmailTemplatesEditor
+                listTitle={listTitle}
+                folderId={lettersFolderId}
+                token={token}
+                autoCreate={templateAutoCreate}
+                onBack={() => openLettersList(lettersFolderId)}
+                onNotice={setNotice}
+                onError={setError}
+              />
+            </Suspense>
+          ) : lettersView === "compose" ? (
+            <LetterComposer
+              key={`letter-compose-${lettersComposeKey}`}
+              token={token}
+              folderId={lettersFolderId}
+              letterId={activeLetterId}
+              onBack={() => openLettersList(lettersFolderId)}
+              onNotice={setNotice}
+              onError={setError}
+              onSaved={() => loadLetters()}
+            />
+          ) : (
+            <LettersList
+              listTitle={listTitle}
+              letters={letters}
+              loading={lettersLoading}
+              onSelect={(letterId) => openLetterCompose(lettersFolderId, letterId)}
+              onCompose={() => openLetterCompose(lettersFolderId)}
+              onDelete={handleDeleteLetter}
+            />
+          )
         ) : (
           <DocumentList
             listTitle={listTitle}

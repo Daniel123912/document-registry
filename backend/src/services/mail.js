@@ -1,6 +1,10 @@
+const fs = require("fs");
 const nodemailer = require("nodemailer");
 const { query } = require("../db");
 const { mail, appPublicUrl } = require("../config");
+const { buildEmailFromTemplate } = require("./emailTemplates");
+const { prepareHtmlForEmail } = require("../utils/emailHtml");
+const { resolveStoredFile } = require("../utils/files");
 
 let transporter = null;
 
@@ -41,19 +45,22 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-async function sendMail({ to, subject, text, html }) {
+async function sendMail({ to, subject, text, html, attachments = [] }) {
   const transport = getTransporter();
   if (!transport) {
     console.warn(`[mail] SMTP не настроен, письмо пропущено: ${subject} → ${to}`);
     return { skipped: true };
   }
 
+  const prepared = prepareHtmlForEmail(html);
+
   await transport.sendMail({
     from: mail.from,
     to,
     subject,
     text,
-    html,
+    html: prepared.html,
+    attachments: [...attachments, ...prepared.attachments],
   });
 
   return { skipped: false };
@@ -86,7 +93,52 @@ async function loadAssignmentRecipients(documentId) {
   return result.rows;
 }
 
-function buildAssignmentEmail({ row, kind, changeReason }) {
+async function loadDocumentAttachment(documentId) {
+  const result = await query(
+    `
+      SELECT
+        d.draft_file_path,
+        d.draft_original_filename,
+        d.draft_mime_type,
+        d.active_version_no,
+        dv.file_path AS version_file_path,
+        dv.original_filename AS version_original_filename,
+        dv.mime_type AS version_mime_type
+      FROM documents d
+      LEFT JOIN document_versions dv
+        ON dv.document_id = d.id
+       AND dv.version_no = d.active_version_no
+      WHERE d.id = $1
+        AND d.deleted_at IS NULL
+    `,
+    [documentId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  const storedPath = row.version_file_path || row.draft_file_path;
+  if (!storedPath) {
+    return null;
+  }
+
+  const absolutePath = resolveStoredFile(storedPath);
+  try {
+    await fs.promises.access(absolutePath);
+  } catch {
+    return null;
+  }
+
+  return {
+    filename: row.version_original_filename || row.draft_original_filename || "document",
+    path: absolutePath,
+    contentType: row.version_mime_type || row.draft_mime_type || "application/octet-stream",
+  };
+}
+
+function buildFallbackAssignmentEmail({ row, kind, changeReason }) {
   const link = documentLink(row.document_id);
   const title = row.title || "Без названия";
   const authorName = row.author_name || "Ответственный";
@@ -141,6 +193,33 @@ function buildAssignmentEmail({ row, kind, changeReason }) {
   return { subject, text, html };
 }
 
+async function buildAssignmentEmail({ row, kind, changeReason }) {
+  const link = documentLink(row.document_id);
+  const title = row.title || "Без названия";
+  const authorName = row.author_name || "Ответственный";
+  const versionNo = String(Number(row.active_version_no || 1));
+  const changeReasonBlock =
+    kind === "new_version" && changeReason
+      ? `<p><strong>Причина изменений:</strong> ${escapeHtml(changeReason)}</p>`
+      : "";
+
+  const templateKind = kind === "new_version" ? "new_version" : "publish";
+  const fromTemplate = await buildEmailFromTemplate(templateKind, {
+    fullName: escapeHtml(row.full_name || ""),
+    title: escapeHtml(title),
+    authorName: escapeHtml(authorName),
+    versionNo: escapeHtml(versionNo),
+    link: escapeHtml(link),
+    changeReasonBlock,
+  });
+
+  if (fromTemplate) {
+    return fromTemplate;
+  }
+
+  return buildFallbackAssignmentEmail({ row, kind, changeReason });
+}
+
 async function notifyAssignedUsers({ documentId, kind, changeReason }) {
   try {
     const rows = await loadAssignmentRecipients(documentId);
@@ -148,14 +227,26 @@ async function notifyAssignedUsers({ documentId, kind, changeReason }) {
       return;
     }
 
+    const documentAttachment = await loadDocumentAttachment(documentId);
+    const fileAttachments = documentAttachment
+      ? [
+          {
+            filename: documentAttachment.filename,
+            path: documentAttachment.path,
+            contentType: documentAttachment.contentType,
+          },
+        ]
+      : [];
+
     for (const row of rows) {
-      const email = buildAssignmentEmail({ row, kind, changeReason });
+      const email = await buildAssignmentEmail({ row, kind, changeReason });
       try {
         await sendMail({
           to: row.email,
           subject: email.subject,
           text: email.text,
           html: email.html,
+          attachments: fileAttachments,
         });
       } catch (error) {
         console.error(`[mail] Не удалось отправить письмо на ${row.email}:`, error.message);
