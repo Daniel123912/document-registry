@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alignment,
   AutoImage,
@@ -41,6 +41,7 @@ import {
   Underline,
   WordCount,
 } from "ckeditor5";
+import { InsertLetterPageBreak } from "../utils/insertLetterPageBreakPlugin";
 
 const MENU_MENUS = [
   { id: "file", label: "Файл" },
@@ -165,6 +166,17 @@ function getMenuItems(menuId, { canSave, importing, saving, commandEnabled, vari
           action: "insertOutgoingRequisites",
           disabled: importing || saving,
         },
+        ...(variant === "letter" ?
+          [
+            {
+              id: "insertPageBreak",
+              label: "Разрыв страницы",
+              action: "insertPageBreak",
+              shortcut: "Ctrl+Enter",
+              disabled: importing || saving,
+            },
+          ]
+        : []),
       ];
     case "format":
       return [
@@ -352,48 +364,55 @@ const editorPlugins = [
   WordCount,
 ];
 
-export function createEditorConfig(onWordCountUpdate) {
+export function createEditorConfig(onWordCountUpdate, { letterPageBreak = false } = {}) {
+  const plugins = letterPageBreak ? [...editorPlugins, InsertLetterPageBreak] : editorPlugins;
+  const toolbarItems = [
+    "undo",
+    "redo",
+    "|",
+    "heading",
+    "|",
+    "fontFamily",
+    "fontSize",
+    "|",
+    "bold",
+    "italic",
+    "underline",
+    "strikethrough",
+    "|",
+    "fontColor",
+    "fontBackgroundColor",
+    "|",
+    "superscript",
+    "subscript",
+    "removeFormat",
+    "|",
+    "alignment",
+    "|",
+    "bulletedList",
+    "numberedList",
+    "outdent",
+    "indent",
+    "|",
+    "link",
+    "insertImage",
+    "insertTable",
+    "|",
+    "blockQuote",
+    "horizontalLine",
+    "|",
+    "sourceEditing",
+  ];
+
+  if (letterPageBreak) {
+    toolbarItems.push("|", "insertLetterPageBreak");
+  }
+
   return {
     licenseKey: "GPL",
-    plugins: editorPlugins,
+    plugins,
     toolbar: {
-      items: [
-        "undo",
-        "redo",
-        "|",
-        "heading",
-        "|",
-        "fontFamily",
-        "fontSize",
-        "|",
-        "bold",
-        "italic",
-        "underline",
-        "strikethrough",
-        "|",
-        "fontColor",
-        "fontBackgroundColor",
-        "|",
-        "superscript",
-        "subscript",
-        "removeFormat",
-        "|",
-        "alignment",
-        "|",
-        "bulletedList",
-        "numberedList",
-        "outdent",
-        "indent",
-        "|",
-        "link",
-        "insertImage",
-        "insertTable",
-        "|",
-        "blockQuote",
-        "horizontalLine",
-        "|",
-        "sourceEditing",
-      ],
+      items: toolbarItems,
       shouldNotGroupWhenFull: true,
     },
     heading: {
@@ -448,9 +467,10 @@ export function createEditorConfig(onWordCountUpdate) {
     },
     htmlSupport: {
       allow: [
-        { name: "div", classes: true, attributes: ["class", "aria-hidden", "contenteditable"] },
+        { name: "div", classes: true, attributes: ["class", "aria-hidden", "contenteditable", "data-auto-page-break", "data-manual-page-break", "title"] },
         { name: "img", classes: true, attributes: ["src", "alt", "class", "draggable"] },
         { name: "p", classes: true },
+        { name: "span", classes: true },
         { name: "a", classes: true, attributes: ["href", "target", "rel"] },
         { name: "ul", classes: true },
         { name: "li", classes: true },
@@ -461,11 +481,61 @@ export function createEditorConfig(onWordCountUpdate) {
   };
 }
 
+export function getEditorHtml(editorRef, fallbackHtml = "") {
+  const editor = editorRef.current;
+  if (!editor) {
+    return fallbackHtml;
+  }
+
+  try {
+    if (editor.state === "destroyed") {
+      return fallbackHtml;
+    }
+
+    return editor.getData();
+  } catch {
+    return fallbackHtml;
+  }
+}
+
 export function mountEditorToolbar(editor, toolbarRef) {
   if (toolbarRef.current) {
     toolbarRef.current.replaceChildren();
     toolbarRef.current.appendChild(editor.ui.view.toolbar.element);
   }
+}
+
+export function useEmailDocEditorMount({ editorRef, toolbarRef, letterLayoutCleanupRef }) {
+  const [editorMountKey, setEditorMountKey] = useState(0);
+  const [editorVisible, setEditorVisible] = useState(true);
+
+  const remountEditor = useCallback(() => {
+    setEditorVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (editorVisible) {
+      return undefined;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      setEditorMountKey((current) => current + 1);
+      setEditorVisible(true);
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [editorVisible]);
+
+  useEffect(() => {
+    return () => {
+      letterLayoutCleanupRef.current?.();
+      letterLayoutCleanupRef.current = null;
+      editorRef.current = null;
+      toolbarRef.current?.replaceChildren();
+    };
+  }, [editorMountKey, editorRef, letterLayoutCleanupRef, toolbarRef]);
+
+  return { editorMountKey, editorVisible, remountEditor };
 }
 
 export function isEditorCommandEnabled(editorRef, commandName) {
@@ -552,6 +622,7 @@ export function createMenuActionHandler({
   onSave,
   onPrint,
   onInsertOutgoingRequisites,
+  onInsertPageBreak,
   setOpenMenu,
 }) {
   return function handleMenuAction(action, value) {
@@ -569,6 +640,9 @@ export function createMenuActionHandler({
         break;
       case "insertOutgoingRequisites":
         onInsertOutgoingRequisites?.();
+        break;
+      case "insertPageBreak":
+        onInsertPageBreak?.();
         break;
       case "undo":
       case "redo":

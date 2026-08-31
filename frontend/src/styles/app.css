@@ -2272,9 +2272,45 @@ a {
   max-width: none;
 }
 
+.email-doc-editor__canvas--letter .letter-document {
+  position: relative;
+  width: 210mm;
+  margin: 0 auto;
+}
+
+.email-doc-editor__canvas--letter .letter-document__stack {
+  position: relative;
+  z-index: 0;
+}
+
+.email-doc-editor__canvas--letter .letter-document__stack .letter-page--sheet {
+  position: relative;
+  width: 210mm;
+  height: 297mm;
+  min-height: 297mm;
+  margin: 0 auto 24px;
+  box-sizing: border-box;
+  background: #fff;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgba(43, 58, 74, 0.08),
+    0 12px 32px rgba(43, 58, 74, 0.12);
+}
+
+.email-doc-editor__canvas--letter .letter-document__stack .letter-page--sheet:last-child {
+  margin-bottom: 0;
+}
+
+.email-doc-editor__canvas--letter .letter-document__editor {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .email-doc-editor__canvas--letter .letter-page {
   position: relative;
   width: 210mm;
+  min-height: 297mm;
   margin: 0 auto 24px;
   box-sizing: border-box;
   background: #fff;
@@ -2286,9 +2322,7 @@ a {
 }
 
 .email-doc-editor__canvas--letter .letter-page__header-img,
-.email-doc-editor__canvas--letter .letter-page__footer-img,
-.email-doc-editor__canvas--letter .letter-page-turn__footer,
-.email-doc-editor__canvas--letter .letter-page-turn__header {
+.email-doc-editor__canvas--letter .letter-page__footer-img {
   position: absolute;
   z-index: 0;
   pointer-events: none;
@@ -2307,8 +2341,8 @@ a {
   width: 4.12in;
   height: 1.24in;
   left: calc(3cm - 1.03in);
-  bottom: calc(2cm - 0.07in);
-  top: auto;
+  top: calc(297mm - 2cm - 1.24in + 0.07in);
+  bottom: auto;
 }
 
 .email-doc-editor__canvas--letter .letter-page__content {
@@ -2317,7 +2351,7 @@ a {
 }
 
 .email-doc-editor__canvas--letter .ck.ck-editor__editable:not(.ck-editor__nested-editable) {
-  min-height: 200mm;
+  min-height: 297mm;
   padding: 1.77in 1.5cm calc(2cm + 1.24in + 0.5cm) 3cm;
   background: transparent;
   box-shadow: none;
@@ -2378,36 +2412,56 @@ a {
 
 .email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn {
   display: block;
-  position: relative;
-  height: calc(24px + 1.77in);
-  margin: calc(1.5em + 1.24in) -1.5cm 0 -3cm;
-  border-top: 24px solid #e8edf3;
-}
-
-.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__footer {
-  width: 4.12in;
-  height: 1.24in;
-  left: calc(3cm - 1.03in);
-  top: calc(-1.24in - 1.5em);
-  position: absolute;
-  z-index: 0;
+  margin: 0 -1.5cm 0 -3cm;
   pointer-events: none;
+  user-select: none;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent;
+  --ck-widget-outline-thickness: 0;
+  --ck-color-widget-blurred-border: transparent;
+  --ck-color-widget-hover-border: transparent;
+  --ck-color-widget-type-around-button-active: transparent;
 }
 
-.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__header {
-  width: 8.33in;
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn.ck-widget,
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn.ck-widget_selected,
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn.ck-widget:hover {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__footer-space {
+  min-height: 0;
+}
+
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__gap {
+  height: 24px;
+  background: #e8edf3;
+  box-shadow:
+    0 -6px 12px -8px rgba(43, 58, 74, 0.18),
+    0 6px 12px -8px rgba(43, 58, 74, 0.18);
+}
+
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__label {
+  display: none;
+}
+
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__header-space {
   height: 1.77in;
-  left: calc(3cm - 1.21in);
-  top: 24px;
-  position: absolute;
-  z-index: 0;
-  pointer-events: none;
 }
 
-.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn img {
-  max-width: none;
-  margin: 0;
-  outline: none;
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__footer,
+.email-doc-editor__canvas--letter .ck-editor__editable .letter-page-turn__header {
+  display: none;
+}
+
+.email-doc-editor__canvas--letter .ck-editor__editable div[contenteditable="false"].letter-page-turn,
+.email-doc-editor__canvas--letter .ck-editor__editable div[contenteditable="false"].letter-page-turn * {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 .email-doc-editor__canvas--letter .ck-editor__editable li {

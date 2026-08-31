@@ -6,9 +6,11 @@ import {
   createEditorConfig,
   createMenuActionHandler,
   EmailEditorMenubar,
+  getEditorHtml,
   insertHtmlSnippet,
   isEditorCommandEnabled,
   mountEditorToolbar,
+  useEmailDocEditorMount,
 } from "./emailDocEditorShared";
 import {
   confirmLetter,
@@ -30,6 +32,7 @@ import {
   resolveLetterSubject,
 } from "../utils/bakorLetterTemplate";
 import { downloadLetterAsPdf, downloadLetterAsWord, printLetter } from "../utils/letterExport";
+import { bindLetterPageLayout, insertLetterPageBreak } from "../utils/letterPageLayout";
 
 export default function LetterComposer({
   token,
@@ -52,8 +55,6 @@ export default function LetterComposer({
   const [loading, setLoading] = useState(Boolean(letterId));
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
-  const [editorVersion, setEditorVersion] = useState(0);
   const [wordStats, setWordStats] = useState({ words: 0, characters: 0 });
   const [openMenu, setOpenMenu] = useState(null);
   const [templates, setTemplates] = useState([]);
@@ -62,7 +63,13 @@ export default function LetterComposer({
   const [outgoingPreview, setOutgoingPreview] = useState({ outgoingNumber: 0, outgoingDate: null });
   const toolbarRef = useRef(null);
   const editorRef = useRef(null);
+  const letterLayoutCleanupRef = useRef(null);
   const createStartedRef = useRef(false);
+  const { editorMountKey, editorVisible, remountEditor } = useEmailDocEditorMount({
+    editorRef,
+    toolbarRef,
+    letterLayoutCleanupRef,
+  });
 
   const isFinalized = draft.status === "sent" || draft.status === "confirmed";
   const canEdit = !isFinalized && !saving && !confirming;
@@ -111,19 +118,6 @@ export default function LetterComposer({
 
     return nextDraft;
   }
-
-  useEffect(() => {
-    setEditorReady(true);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      editorRef.current = null;
-      if (toolbarRef.current) {
-        toolbarRef.current.replaceChildren();
-      }
-    };
-  }, [currentLetterId, editorVersion, draft.layoutKind]);
 
   useEffect(() => {
     setCurrentLetterId(letterId);
@@ -197,7 +191,7 @@ export default function LetterComposer({
       fetchLetter(token, currentLetterId)
         .then((letter) => {
           setDraft(mapLetterToDraft(letter));
-          setEditorVersion((current) => current + 1);
+          remountEditor();
           setWordStats({ words: 0, characters: 0 });
         })
         .catch((requestError) => onError(requestError.message))
@@ -221,16 +215,22 @@ export default function LetterComposer({
       .then((letter) => {
         setCurrentLetterId(letter.id);
         setDraft(mapLetterToDraft(letter));
-        setEditorVersion((current) => current + 1);
+        remountEditor();
         setWordStats({ words: 0, characters: 0 });
       })
       .catch((requestError) => onError(requestError.message))
       .finally(() => setLoading(false));
-  }, [token, currentLetterId, folderId, onError]);
+  }, [token, currentLetterId, folderId, onError, remountEditor]);
 
   function handleEditorReady(editor) {
     editorRef.current = editor;
     mountEditorToolbar(editor, toolbarRef);
+
+    letterLayoutCleanupRef.current?.();
+    letterLayoutCleanupRef.current = bindLetterPageLayout(
+      editor,
+      isBakorLetterLayout(draft.layoutKind)
+    );
   }
 
   function isCommandEnabled(commandName) {
@@ -286,7 +286,7 @@ export default function LetterComposer({
         editorRef.current.setData(htmlBody);
       }
 
-      setEditorVersion((current) => current + 1);
+      remountEditor();
       setWordStats({ words: 0, characters: 0 });
 
       return {
@@ -383,6 +383,16 @@ export default function LetterComposer({
         }
       }
     },
+    onInsertPageBreak: () => {
+      if (!canEdit || !isBakorLetterLayout(draft.layoutKind)) {
+        return;
+      }
+
+      const htmlBody = insertLetterPageBreak(editorRef);
+      if (htmlBody) {
+        setDraft((current) => ({ ...current, htmlBody }));
+      }
+    },
     setOpenMenu,
   });
 
@@ -403,7 +413,7 @@ export default function LetterComposer({
   }, [canEdit, currentLetterId, draft, folderId, token, saving, confirming]);
 
   function getLetterHtml() {
-    return editorRef.current?.getData() || draft.htmlBody;
+    return getEditorHtml(editorRef, draft.htmlBody);
   }
 
   async function handleDownloadWord() {
@@ -523,12 +533,14 @@ export default function LetterComposer({
                   type="checkbox"
                   checked={isBakorLetterLayout(draft.layoutKind)}
                   disabled={!canEdit}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const layoutKind = event.target.checked ? LAYOUT_KIND_BAKOR : "default";
+                    remountEditor();
                     setDraft((current) => ({
                       ...current,
-                      layoutKind: event.target.checked ? LAYOUT_KIND_BAKOR : "default",
-                    }))
-                  }
+                      layoutKind,
+                    }));
+                  }}
                 />
                 Фирменный бланк Бакор (шапка и подвал)
               </label>
@@ -558,18 +570,21 @@ export default function LetterComposer({
                       isBakorLetterLayout(draft.layoutKind) ? " email-doc-editor__canvas--letter" : ""
                     }`}
                   >
-                    {editorReady ? (
+                    {editorVisible ? (
                       isBakorLetterLayout(draft.layoutKind) ? (
                         <LetterTemplate>
                           <CKEditor
-                            key={`${currentLetterId}-${draft.layoutKind}-${editorVersion}`}
+                            key={`${currentLetterId}-${draft.layoutKind}-${editorMountKey}`}
                             editor={DecoupledEditor}
-                            config={createEditorConfig((stats) => {
-                              setWordStats({
-                                words: stats.words,
-                                characters: stats.characters,
-                              });
-                            })}
+                            config={createEditorConfig(
+                              (stats) => {
+                                setWordStats({
+                                  words: stats.words,
+                                  characters: stats.characters,
+                                });
+                              },
+                              { letterPageBreak: true }
+                            )}
                             data={draft.htmlBody}
                             disabled={!canEdit}
                             onReady={handleEditorReady}
@@ -585,7 +600,7 @@ export default function LetterComposer({
                         </LetterTemplate>
                       ) : (
                         <CKEditor
-                          key={`${currentLetterId}-${draft.layoutKind}-${editorVersion}`}
+                          key={`${currentLetterId}-${draft.layoutKind}-${editorMountKey}`}
                           editor={DecoupledEditor}
                           config={createEditorConfig((stats) => {
                             setWordStats({

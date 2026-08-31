@@ -9,6 +9,7 @@ import {
   insertHtmlSnippet,
   isEditorCommandEnabled,
   mountEditorToolbar,
+  useEmailDocEditorMount,
 } from "./emailDocEditorShared";
 import {
   createEmailTemplate,
@@ -22,7 +23,8 @@ import {
 } from "../utils/emailTemplateImport";
 import LetterTemplate from "./LetterTemplate";
 import {
-  buildLetterPrintDocument,
+  applyBakorLetterPagesFromImport,
+  buildLetterPrintShell,
   hasOutgoingRequisitesMarkers,
   isBakorLetterLayout,
   LAYOUT_KIND_BAKOR,
@@ -30,7 +32,11 @@ import {
   OUTGOING_REQUISITES_SNIPPET,
   extractLetterRecipientFromHtml,
   resolveLetterSubject,
+  splitHtmlAtPageTurns,
+  wrapLetterPagesHtml,
 } from "../utils/bakorLetterTemplate";
+import { bindLetterPageLayout, insertLetterPageBreak, paginateLetterHtml, stripAutoPageBreaks } from "../utils/letterPageLayout";
+import { findLiveLetterPreview, resolveLetterAssetSources } from "../utils/letterExport";
 
 function emptyDraft() {
   return {
@@ -59,13 +65,17 @@ export default function EmailTemplatesEditor({
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
-  const [editorVersion, setEditorVersion] = useState(0);
   const [wordStats, setWordStats] = useState({ words: 0, characters: 0 });
   const [openMenu, setOpenMenu] = useState(null);
   const importInputRef = useRef(null);
   const toolbarRef = useRef(null);
   const editorRef = useRef(null);
+  const letterLayoutCleanupRef = useRef(null);
+  const { editorMountKey, editorVisible, remountEditor } = useEmailDocEditorMount({
+    editorRef,
+    toolbarRef,
+    letterLayoutCleanupRef,
+  });
 
   const activeTemplate = useMemo(
     () => templates.find((template) => template.id === activeTemplateId) || null,
@@ -86,19 +96,6 @@ export default function EmailTemplatesEditor({
       effectiveSubject &&
       draft.htmlBody.trim()
   );
-
-  useEffect(() => {
-    setEditorReady(true);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      editorRef.current = null;
-      if (toolbarRef.current) {
-        toolbarRef.current.replaceChildren();
-      }
-    };
-  }, [activeTemplateId, editorVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,7 +142,7 @@ export default function EmailTemplatesEditor({
       return;
     }
 
-    setDraft({
+    const nextDraft = {
       name: activeTemplate.name || "",
       subject: resolveLetterSubject({
         layoutKind: activeTemplate.layoutKind || "default",
@@ -156,14 +153,36 @@ export default function EmailTemplatesEditor({
       layoutKind: activeTemplate.layoutKind || "default",
       isDefault: Boolean(activeTemplate.isDefault),
       htmlBody: activeTemplate.htmlBody || "",
-    });
-    setEditorVersion((current) => current + 1);
+    };
+    const layoutChanged =
+      isBakorLetterLayout(nextDraft.layoutKind) !== isBakorLetterLayout(draft.layoutKind);
+
+    setDraft(nextDraft);
     setWordStats({ words: 0, characters: 0 });
-  }, [activeTemplate]);
+
+    if (layoutChanged) {
+      remountEditor();
+      return;
+    }
+
+    const editor = editorRef.current;
+    if (editor && editor.state !== "destroyed") {
+      editor.setData(nextDraft.htmlBody);
+      return;
+    }
+
+    remountEditor();
+  }, [activeTemplate, remountEditor]);
 
   function handleEditorReady(editor) {
     editorRef.current = editor;
     mountEditorToolbar(editor, toolbarRef);
+
+    letterLayoutCleanupRef.current?.();
+    letterLayoutCleanupRef.current = bindLetterPageLayout(
+      editor,
+      isBakorLetterLayout(draft.layoutKind)
+    );
   }
 
   function isCommandEnabled(commandName) {
@@ -183,11 +202,11 @@ export default function EmailTemplatesEditor({
       ...current,
       htmlBody: `${current.htmlBody || ""}${OUTGOING_REQUISITES_SNIPPET}`,
     }));
-    setEditorVersion((current) => current + 1);
+    remountEditor();
     onNotice("Строка исходящего номера вставлена. Номер и дата подставятся при создании письма.");
   }
 
-  function printEditorContent() {
+  async function printEditorContent() {
     const editor = editorRef.current;
     if (!editor) {
       return;
@@ -200,9 +219,22 @@ export default function EmailTemplatesEditor({
     }
 
     const html = editor.getData();
-    const documentHtml = isBakorLetterLayout(draft.layoutKind)
-      ? buildLetterPrintDocument(html)
-      : `<!DOCTYPE html>
+    let documentHtml;
+
+    if (isBakorLetterLayout(draft.layoutKind)) {
+      const liveDocument = findLiveLetterPreview();
+      const editable = liveDocument?.querySelector(".ck-editor__editable");
+      let pages = paginateLetterHtml(html, editable);
+      if (pages.length <= 1 && html.includes("letter-page-turn")) {
+        const splitPages = splitHtmlAtPageTurns(stripAutoPageBreaks(html));
+        if (splitPages.length > 1) {
+          pages = splitPages;
+        }
+      }
+      const assets = await resolveLetterAssetSources(liveDocument);
+      documentHtml = buildLetterPrintShell(wrapLetterPagesHtml(pages, assets));
+    } else {
+      documentHtml = `<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
@@ -221,6 +253,7 @@ export default function EmailTemplatesEditor({
   </head>
   <body>${html}</body>
 </html>`;
+    }
 
     printWindow.document.write(documentHtml);
     printWindow.document.close();
@@ -257,13 +290,47 @@ export default function EmailTemplatesEditor({
 
     try {
       const imported = await importEmailTemplateFromFile(file);
-      const htmlBody = normalizeOutgoingRequisitesInTemplate(imported.htmlBody);
+      let htmlBody = normalizeOutgoingRequisitesInTemplate(imported.htmlBody);
+      const pageCount = imported.pageCount || 1;
+      const nextDraft = { htmlBody };
+
+      if (pageCount >= 2) {
+        htmlBody = applyBakorLetterPagesFromImport(htmlBody, {
+          pageCount,
+          source: imported.source,
+        });
+        nextDraft.htmlBody = htmlBody;
+        nextDraft.layoutKind = LAYOUT_KIND_BAKOR;
+
+        const recipient = extractLetterRecipientFromHtml(htmlBody);
+        if (recipient) {
+          nextDraft.subject = recipient;
+        }
+      }
+
+      const layoutChanged = pageCount >= 2;
+
       setDraft((current) => ({
         ...current,
-        htmlBody,
+        ...nextDraft,
       }));
-      setEditorVersion((current) => current + 1);
-      onNotice("Шаблон загружен из файла. Проверьте текст и сохраните изменения.");
+
+      if (layoutChanged) {
+        remountEditor();
+      } else {
+        const editor = editorRef.current;
+        if (editor && editor.state !== "destroyed") {
+          editor.setData(htmlBody);
+        } else {
+          remountEditor();
+        }
+      }
+
+      onNotice(
+        pageCount >= 2
+          ? `Шаблон загружен (${pageCount} стр.). Включён фирменный бланк с разрывами страниц. Проверьте текст и сохраните.`
+          : "Шаблон загружен из файла. Проверьте текст и сохраните изменения."
+      );
     } catch (requestError) {
       onError(requestError.message || "Не удалось загрузить файл.");
     } finally {
@@ -357,6 +424,16 @@ export default function EmailTemplatesEditor({
     onSave: handleSave,
     onPrint: printEditorContent,
     onInsertOutgoingRequisites: insertOutgoingRequisitesSnippet,
+    onInsertPageBreak: () => {
+      if (!isBakorLetterLayout(draft.layoutKind)) {
+        return;
+      }
+
+      const htmlBody = insertLetterPageBreak(editorRef);
+      if (htmlBody) {
+        setDraft((current) => ({ ...current, htmlBody }));
+      }
+    },
     setOpenMenu,
   });
 
@@ -469,12 +546,14 @@ export default function EmailTemplatesEditor({
                   <input
                     type="checkbox"
                     checked={isBakorLetterLayout(draft.layoutKind)}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const layoutKind = event.target.checked ? LAYOUT_KIND_BAKOR : "default";
+                      remountEditor();
                       setDraft((current) => ({
                         ...current,
-                        layoutKind: event.target.checked ? LAYOUT_KIND_BAKOR : "default",
-                      }))
-                    }
+                        layoutKind,
+                      }));
+                    }}
                   />
                   Фирменный бланк Бакор (шапка и подвал)
                 </label>
@@ -509,6 +588,7 @@ export default function EmailTemplatesEditor({
                   importing={importing}
                   saving={saving}
                   commandEnabled={isCommandEnabled}
+                  variant={isBakorLetterLayout(draft.layoutKind) ? "letter" : "template"}
                 />
 
                 <div ref={toolbarRef} className="email-doc-editor__toolbar" />
@@ -519,18 +599,21 @@ export default function EmailTemplatesEditor({
                       isBakorLetterLayout(draft.layoutKind) ? " email-doc-editor__canvas--letter" : ""
                     }`}
                   >
-                    {editorReady ? (
+                    {editorVisible ? (
                       isBakorLetterLayout(draft.layoutKind) ? (
                         <LetterTemplate>
                           <CKEditor
-                            key={`${activeTemplateId}-${editorVersion}`}
+                            key={`${activeTemplateId}-${draft.layoutKind}-${editorMountKey}`}
                             editor={DecoupledEditor}
-                            config={createEditorConfig((stats) => {
-                              setWordStats({
-                                words: stats.words,
-                                characters: stats.characters,
-                              });
-                            })}
+                            config={createEditorConfig(
+                              (stats) => {
+                                setWordStats({
+                                  words: stats.words,
+                                  characters: stats.characters,
+                                });
+                              },
+                              { letterPageBreak: true }
+                            )}
                             data={draft.htmlBody}
                             onReady={handleEditorReady}
                             onChange={(_event, editor) => {
@@ -553,7 +636,7 @@ export default function EmailTemplatesEditor({
                         </LetterTemplate>
                       ) : (
                         <CKEditor
-                          key={`${activeTemplateId}-${editorVersion}`}
+                          key={`${activeTemplateId}-${draft.layoutKind}-${editorMountKey}`}
                           editor={DecoupledEditor}
                           config={createEditorConfig((stats) => {
                             setWordStats({

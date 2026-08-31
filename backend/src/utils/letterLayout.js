@@ -36,8 +36,8 @@ const LETTER_PAGE_CSS = `
   width: 4.12in;
   height: 1.24in;
   left: calc(3cm - 1.03in);
-  bottom: calc(2cm - 0.07in);
-  top: auto;
+  top: calc(297mm - 2cm - 1.24in + 0.07in);
+  bottom: auto;
 }
 
 .letter-page__content {
@@ -101,26 +101,27 @@ const LETTER_PAGE_CSS = `
 
 .letter-page__content .letter-page-turn {
   display: block;
-  position: relative;
-  height: calc(24px + 1.77in);
-  margin: calc(1.5em + 1.24in) -1.5cm 0 -3cm;
-  border-top: 24px solid #e8edf3;
+  margin: 0 -1.5cm 0 -3cm;
   break-before: page;
   page-break-before: always;
+  pointer-events: none;
 }
 
-.letter-page-turn__footer {
-  width: 4.12in;
-  height: 1.24in;
-  left: calc(3cm - 1.03in);
-  top: calc(-1.24in - 1.5em);
+.letter-page-turn__footer-space {
+  height: calc(1.5em + 1.24in);
 }
 
-.letter-page-turn__header {
-  width: 8.33in;
+.letter-page-turn__gap {
+  height: 24px;
+}
+
+.letter-page-turn__header-space {
   height: 1.77in;
-  left: calc(3cm - 1.21in);
-  top: 24px;
+}
+
+.letter-page-turn__footer,
+.letter-page-turn__header {
+  display: none;
 }
 `.trim();
 

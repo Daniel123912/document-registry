@@ -13,15 +13,72 @@ const OUTGOING_REQUISITES_HTML_PATTERN =
   /Исх\.(?:\s|&nbsp;|<[^>]+>)*№(?:\s|&nbsp;|<[^>]+>)*\d+(?:\s|&nbsp;|<[^>]+>)*от(?:\s|&nbsp;|<[^>]+>)*\d{2}\.\d{2}\.\d{4}/gi;
 
 export const LETTER_PAGE_HEIGHT_MM = 297;
+export const LETTER_PAGE_WIDTH_MM = 210;
 export const LETTER_PAGE_GAP_PX = 24;
 
 export const LETTER_HEADER_IMAGE = "/letter/header-photo.png";
 export const LETTER_FOOTER_IMAGE = "/letter/footer-signature-block.png";
 
+const IMPORT_PAGE_BREAK_CLASS = "import-page-break";
+const PDF_IMPORTED_PAGE_PATTERN =
+  /<p style="margin:0 0 16px;"><img[\s\S]*?alt="Страница \d+"[\s\S]*?\/><\/p>/gi;
+const IMPORT_PAGE_BREAK_HTML_PATTERN = new RegExp(
+  `<div class="${IMPORT_PAGE_BREAK_CLASS}"[^>]*>\\s*</div>`,
+  "gi"
+);
+
+export function buildLetterPageTurnSnippet({ auto = false } = {}) {
+  const autoAttr = auto ? ' data-auto-page-break="true"' : ' data-manual-page-break="true"';
+
+  return `<div class="letter-page-turn"${autoAttr} contenteditable="false" aria-hidden="true" title="Разрыв страницы"><div class="letter-page-turn__footer-space"></div><div class="letter-page-turn__gap"></div><div class="letter-page-turn__header-space"></div></div>`;
+}
+
+export function insertLetterPageTurnsForImportedPdf(html) {
+  PDF_IMPORTED_PAGE_PATTERN.lastIndex = 0;
+  const pages = String(html || "").match(PDF_IMPORTED_PAGE_PATTERN);
+
+  if (!pages || pages.length < 2) {
+    return html || "";
+  }
+
+  const turn = buildLetterPageTurnSnippet();
+  return pages.join(`\n${turn}\n`);
+}
+
+export function replaceImportedDocxPageBreaks(html) {
+  IMPORT_PAGE_BREAK_HTML_PATTERN.lastIndex = 0;
+
+  if (!IMPORT_PAGE_BREAK_HTML_PATTERN.test(String(html || ""))) {
+    return html || "";
+  }
+
+  IMPORT_PAGE_BREAK_HTML_PATTERN.lastIndex = 0;
+  const turn = buildLetterPageTurnSnippet();
+  return String(html || "").replace(IMPORT_PAGE_BREAK_HTML_PATTERN, turn);
+}
+
+export function applyBakorLetterPagesFromImport(html, { pageCount, source } = {}) {
+  if (!html || !pageCount || pageCount < 2) {
+    return html || "";
+  }
+
+  if (source === "pdf") {
+    return insertLetterPageTurnsForImportedPdf(html);
+  }
+
+  if (source === "docx") {
+    const withBreaks = replaceImportedDocxPageBreaks(html);
+    return withBreaks !== html ? withBreaks : html;
+  }
+
+  return html;
+}
+
 export const LETTER_PAGE_CSS = `
 .letter-page {
   position: relative;
   width: 210mm;
+  min-height: 297mm;
   margin: 0 auto;
   box-sizing: border-box;
   background: #fff;
@@ -35,15 +92,42 @@ export const LETTER_PAGE_CSS = `
     0 12px 32px rgba(43, 58, 74, 0.12);
 }
 
+.letter-page + .letter-page {
+  margin-top: 24px;
+}
+
 .letter-page__header-img,
-.letter-page__footer-img,
-.letter-page-turn__footer,
-.letter-page-turn__header {
+.letter-page__footer-img {
   position: absolute;
   z-index: 0;
   pointer-events: none;
   user-select: none;
   display: block;
+}
+
+.letter-page__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.letter-page__table .letter-page__header-cell,
+.letter-page__table .letter-page__footer-cell {
+  padding: 0;
+  vertical-align: top;
+  line-height: 0;
+}
+
+.letter-page__table .letter-page__header-cell {
+  height: 1.77in;
+}
+
+.letter-page__table .letter-page__header-img,
+.letter-page__table .letter-page__footer-img {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  margin: 0;
 }
 
 .letter-page__header-img {
@@ -57,8 +141,8 @@ export const LETTER_PAGE_CSS = `
   width: 4.12in;
   height: 1.24in;
   left: calc(3cm - 1.03in);
-  bottom: calc(2cm - 0.07in);
-  top: auto;
+  top: calc(297mm - 2cm - 1.24in + 0.07in);
+  bottom: auto;
 }
 
 .letter-page__content {
@@ -70,6 +154,10 @@ export const LETTER_PAGE_CSS = `
   font-family: "Times New Roman", Times, serif;
   font-size: 12pt;
   line-height: 1.15;
+}
+
+.letter-page__content--continuation {
+  padding-top: 0;
 }
 
 .letter-page__content p {
@@ -125,29 +213,33 @@ export const LETTER_PAGE_CSS = `
   margin-top: 1.2em;
 }
 
-/* Разрыв страницы: подвал стр.1 + зазор + шапка стр.2 */
+/* Разрыв страницы: отступ под подвал, зазор между листами, отступ под шапку */
 .letter-page__content .letter-page-turn {
   display: block;
-  position: relative;
-  height: calc(24px + 1.77in);
-  margin: calc(1.5em + 1.24in) -1.5cm 0 -3cm;
-  border-top: 24px solid #e8edf3;
+  margin: 0 -1.5cm 0 -3cm;
   break-before: page;
   page-break-before: always;
+  pointer-events: none;
+  user-select: none;
+  outline: none;
+  border: none;
 }
 
-.letter-page-turn__footer {
-  width: 4.12in;
-  height: 1.24in;
-  left: calc(3cm - 1.03in);
-  top: calc(-1.24in - 1.5em);
+.letter-page-turn__footer-space {
+  min-height: 0;
 }
 
-.letter-page-turn__header {
-  width: 8.33in;
+.letter-page-turn__gap {
+  height: 24px;
+  background: transparent;
+}
+
+.letter-page-turn__label {
+  display: none;
+}
+
+.letter-page-turn__header-space {
   height: 1.77in;
-  left: calc(3cm - 1.21in);
-  top: 24px;
 }
 
 @media print {
@@ -169,31 +261,65 @@ export const LETTER_PAGE_CSS = `
   .letter-page {
     width: 210mm;
     min-height: 297mm;
-    margin: 0 auto;
+    margin: 0;
     box-shadow: none;
     overflow: visible;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .letter-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .letter-page + .letter-page {
+    margin-top: 0;
+  }
+
+  .letter-page__header-cell,
+  .letter-page__header-cell img,
+  .letter-page__footer-cell,
+  .letter-page__footer-cell img {
+    margin: 0;
+    padding: 0;
+  }
+
+  .letter-page__table .letter-page__header-cell {
+    height: 1.77in !important;
+  }
+
+  .letter-page__content-cell > :first-child {
+    margin-top: 0;
   }
 
   .letter-page__header-img,
-  .letter-page__footer-img,
-  .letter-page-turn__footer,
-  .letter-page-turn__header {
-    position: absolute;
+  .letter-page__footer-img {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
+  .letter-page__table .letter-page__header-img,
+  .letter-page__table .letter-page__footer-img {
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+  }
+
   .letter-page__content .letter-page-turn {
-    border-top-color: transparent;
     break-before: page;
     page-break-before: always;
   }
 
+  .letter-page-turn__gap {
+    background: transparent;
+  }
+
   .letter-page__content img,
   .letter-page__header-img,
-  .letter-page__footer-img,
-  .letter-page-turn__footer,
-  .letter-page-turn__header {
+  .letter-page__footer-img {
     max-width: none;
   }
 }
@@ -232,10 +358,7 @@ export const DEFAULT_BAKOR_LETTER_HTML = `
 </ul>
 <p class="letter-body-justify">Представленный комплект материалов не содержит полного перечня сведений, необходимых для проведения объективной экспертизы.</p>
 
-<div class="letter-page-turn" contenteditable="false">
-  <img class="letter-page-turn__footer" src="/letter/footer-signature-block.png" alt="" />
-  <img class="letter-page-turn__header" src="/letter/header-photo.png" alt="" />
-</div>
+${buildLetterPageTurnSnippet()}
 
 <p class="letter-section-title">3. Анализ и заключение производителя</p>
 <p class="letter-subsection">3.1. По результатам анализа представленных фотоматериалов сообщаем, что заявленное протечение топливного бака на предоставленных изображениях не подтверждается. Характер имеющихся следов указывает на воздействие эксплуатационных факторов, а не на производственный дефект.</p>
@@ -375,15 +498,98 @@ export function resolveLetterSubject({ layoutKind, htmlBody, subject }) {
   return extractLetterRecipientFromHtml(htmlBody) || String(subject || "").trim();
 }
 
-export function wrapLetterBodyHtml(contentHtml, { headerSrc, footerSrc } = {}) {
+export function splitHtmlAtPageTurns(html) {
+  const container = document.createElement("div");
+  container.innerHTML = String(html || "");
+
+  const parts = [];
+  let buffer = document.createElement("div");
+
+  for (const node of Array.from(container.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains("letter-page-turn")) {
+      if (buffer.childNodes.length > 0) {
+        parts.push(buffer.innerHTML.trim());
+        buffer = document.createElement("div");
+      }
+      continue;
+    }
+
+    buffer.appendChild(node.cloneNode(true));
+  }
+
+  if (buffer.childNodes.length > 0) {
+    parts.push(buffer.innerHTML.trim());
+  }
+
+  return parts.filter(Boolean);
+}
+
+const LETTER_HEADER_IMG_STYLE =
+  "display:block;position:static;width:8.33in;height:1.77in;max-width:none;border:0;margin:0;padding:0;";
+const LETTER_FOOTER_IMG_STYLE =
+  "display:block;position:static;width:4.12in;height:1.24in;max-width:none;border:0;margin:0;padding:0;";
+
+function stripPageTurnArtifacts(html) {
+  const container = document.createElement("div");
+  container.innerHTML = String(html || "");
+  container
+    .querySelectorAll(".letter-page-turn, .letter-page-turn__footer-space, .letter-page-turn__gap, .letter-page-turn__header-space")
+    .forEach((node) => node.remove());
+  return container.innerHTML.trim();
+}
+
+function buildLetterPageShell(
+  contentHtml,
+  { headerSrc, footerSrc, isLastPage = true } = {}
+) {
   const header = headerSrc || LETTER_HEADER_IMAGE;
   const footer = footerSrc || LETTER_FOOTER_IMAGE;
+  const pageBreakStyle = isLastPage ?
+    ""
+  : "page-break-after:always;mso-page-break-after:always;";
+  const safeContentHtml = stripPageTurnArtifacts(contentHtml);
 
-  return `<div class="letter-page">
-  <img class="letter-page__header-img" src="${header}" alt="" aria-hidden="true" />
-  <img class="letter-page__footer-img" src="${footer}" alt="" aria-hidden="true" />
-  <div class="letter-page__content">${contentHtml}</div>
+  return `<div class="letter-page" style="${pageBreakStyle}">
+  <table class="letter-page__table" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:210mm;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+    <tr>
+      <td class="letter-page__header-cell" style="height:1.77in;padding:0 0 0 calc(3cm - 1.21in);vertical-align:top;line-height:0;font-size:0;">
+        <img class="letter-page__header-img" src="${header}" alt="" aria-hidden="true" width="599" height="127" style="${LETTER_HEADER_IMG_STYLE}" />
+      </td>
+    </tr>
+    <tr>
+      <td class="letter-page__content-cell" style="padding:0 1.5cm 0.5cm 3cm;vertical-align:top;font-family:'Times New Roman',Times,serif;font-size:12pt;line-height:1.15;color:#0f1115;">
+        ${safeContentHtml}
+      </td>
+    </tr>
+    <tr>
+      <td class="letter-page__footer-cell" style="height:1.5in;padding:0 1.5cm 0.5cm 3cm;vertical-align:bottom;line-height:0;">
+        <img class="letter-page__footer-img" src="${footer}" alt="" aria-hidden="true" width="296" height="89" style="${LETTER_FOOTER_IMG_STYLE}" />
+      </td>
+    </tr>
+  </table>
 </div>`;
+}
+
+export function wrapLetterPagesHtml(pages, { headerSrc, footerSrc } = {}) {
+  const safePages = (pages || []).map((part) => String(part || "").trim()).filter(Boolean);
+
+  if (safePages.length <= 1) {
+    return buildLetterPageShell(safePages[0] || "", { headerSrc, footerSrc });
+  }
+
+  return safePages
+    .map((pageHtml, index) =>
+      buildLetterPageShell(pageHtml, {
+        headerSrc,
+        footerSrc,
+        isLastPage: index === safePages.length - 1,
+      })
+    )
+    .join("\n");
+}
+
+export function wrapLetterBodyHtml(contentHtml, { headerSrc, footerSrc } = {}) {
+  return wrapLetterPagesHtml(splitHtmlAtPageTurns(contentHtml), { headerSrc, footerSrc });
 }
 
 export function buildLetterPrintDocument(contentHtml, { headerSrc, footerSrc } = {}) {

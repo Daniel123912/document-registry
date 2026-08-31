@@ -4,7 +4,10 @@ import {
   isBakorLetterLayout,
   LETTER_FOOTER_IMAGE,
   LETTER_HEADER_IMAGE,
+  splitHtmlAtPageTurns,
+  wrapLetterPagesHtml,
 } from "./bakorLetterTemplate";
+import { paginateLetterHtml, layoutLetterPageTurns, stripAutoPageBreaks } from "./letterPageLayout";
 
 const LETTER_ASSET_PATHS = [LETTER_HEADER_IMAGE, LETTER_FOOTER_IMAGE];
 
@@ -118,32 +121,60 @@ async function inlineImages(html, sourceRoot) {
   return applyImageReplacements(absolutizeAssetUrls(html), replacements);
 }
 
-function normalizeLetterPreviewClone(letterPageElement) {
-  const clone = letterPageElement.cloneNode(true);
-  const contentWrapper = clone.querySelector(".letter-page__content");
-  const editable =
-    letterPageElement.querySelector(".ck-editor__editable") ||
-    clone.querySelector(".ck-editor__editable");
+export async function resolveLetterAssetSources(liveDocument) {
+  const replacements = collectImageReplacements(liveDocument);
+  await addFallbackAssetReplacements(replacements);
 
-  if (contentWrapper && editable) {
-    contentWrapper.innerHTML = editable.innerHTML;
-  }
+  const resolveAsset = (path) => {
+    const normalized = String(path || "").trim();
+    if (!normalized) {
+      return "";
+    }
 
-  clone.querySelectorAll(".ck, .ck-editor, .ck-toolbar, .ck-editor__top").forEach((node) => {
-    node.remove();
-  });
+    const absolutePath = normalized.startsWith("http") ?
+      normalized
+    : `${window.location.origin}${normalized}`;
 
-  return clone;
+    return (
+      replacements.get(normalized) ||
+      replacements.get(absolutePath) ||
+      normalized
+    );
+  };
+
+  const headerPath =
+    liveDocument?.dataset?.letterHeader || LETTER_HEADER_IMAGE;
+  const footerPath =
+    liveDocument?.dataset?.letterFooter || LETTER_FOOTER_IMAGE;
+
+  return {
+    headerSrc: resolveAsset(headerPath),
+    footerSrc: resolveAsset(footerPath),
+  };
 }
 
-async function buildBakorExportDocument(contentHtml, liveLetterPage) {
-  if (liveLetterPage) {
-    const clone = normalizeLetterPreviewClone(liveLetterPage);
-    const shell = buildLetterPrintShell(clone.outerHTML);
-    return inlineImages(shell, liveLetterPage);
+async function buildBakorExportDocument(contentHtml, liveLetterDocument) {
+  const liveDocument = liveLetterDocument || findLiveLetterPreview();
+  const editable = liveDocument?.querySelector?.(".ck-editor__editable");
+  const sourceHtml = String(contentHtml || "").trim() || editable?.innerHTML || "";
+
+  if (editable) {
+    layoutLetterPageTurns(liveDocument, { autoPageBreaks: false });
   }
 
-  return inlineImages(buildLetterPrintDocument(contentHtml), null);
+  let pages = paginateLetterHtml(sourceHtml, editable);
+  if (pages.length <= 1 && sourceHtml.includes("letter-page-turn")) {
+    const splitPages = splitHtmlAtPageTurns(stripAutoPageBreaks(sourceHtml));
+    if (splitPages.length > 1) {
+      pages = splitPages;
+    }
+  }
+
+  const assets = await resolveLetterAssetSources(liveDocument);
+  const body = wrapLetterPagesHtml(pages, assets);
+  const shell = buildLetterPrintShell(body);
+
+  return inlineImages(shell, liveDocument);
 }
 
 async function buildExportDocument(contentHtml, layoutKind, liveLetterPage) {
@@ -279,7 +310,7 @@ async function printHtmlDocument(documentHtml, { title } = {}) {
 }
 
 export function findLiveLetterPreview() {
-  return document.querySelector(".email-doc-editor__canvas--letter .letter-page");
+  return document.querySelector(".email-doc-editor__canvas--letter .letter-document");
 }
 
 export async function downloadLetterAsWord(

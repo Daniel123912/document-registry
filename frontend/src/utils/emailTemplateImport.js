@@ -12,6 +12,9 @@ const MAX_PDF_PAGES = 20;
 const PDF_RENDER_SCALE = 2;
 const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_PAGE_BREAK_PATTERN =
+  /<w:br[^>]*w:type="page"|<w:lastRenderedPageBreak|<w:pageBreakBefore/g;
+const MAMMOTH_PAGE_BREAK_STYLE_MAP = [`br[type=page] => div.import-page-break:fresh`];
 
 function isZipArrayBuffer(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
@@ -101,14 +104,62 @@ function mammothImageConverter(mammoth) {
 }
 
 async function convertDocxBufferToHtml(arrayBuffer, mammoth, imageOptions) {
-  const rendered = await mammoth.convertToHtml({ arrayBuffer }, imageOptions);
+  const rendered = await mammoth.convertToHtml(
+    { arrayBuffer },
+    {
+      ...imageOptions,
+      styleMap: MAMMOTH_PAGE_BREAK_STYLE_MAP,
+    }
+  );
   return rendered.value || "";
+}
+
+function countDocxPages(documentXml) {
+  if (!documentXml) {
+    return 1;
+  }
+
+  DOCX_PAGE_BREAK_PATTERN.lastIndex = 0;
+  const matches = documentXml.match(DOCX_PAGE_BREAK_PATTERN);
+  return (matches?.length || 0) + 1;
 }
 
 function sortedDocxParts(files, pattern) {
   return Object.keys(files)
     .filter((name) => pattern.test(name))
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function normalizeDocxPageBreaksInXml(documentXml) {
+  let result = String(documentXml || "");
+
+  result = result.replace(
+    /<w:p\b([^>]*)>(\s*<w:pPr>[\s\S]*?<w:pageBreakBefore\s*\/?>[\s\S]*?<\/w:pPr>)/g,
+    '<w:p$1><w:r><w:br w:type="page"/></w:r>$2'
+  );
+
+  result = result.replace(/<w:lastRenderedPageBreak\s*\/>/g, '<w:r><w:br w:type="page"/></w:r>');
+
+  return result;
+}
+
+async function buildDocxArrayBufferForMammoth(arrayBuffer, JSZipLib) {
+  const zip = await JSZipLib.loadAsync(arrayBuffer);
+  const documentFile = zip.file("word/document.xml");
+
+  if (!documentFile) {
+    return arrayBuffer;
+  }
+
+  const documentXml = await documentFile.async("text");
+  const normalizedXml = normalizeDocxPageBreaksInXml(documentXml);
+
+  if (normalizedXml === documentXml) {
+    return arrayBuffer;
+  }
+
+  zip.file("word/document.xml", normalizedXml);
+  return zip.generateAsync({ type: "arraybuffer" });
 }
 
 async function extractDocxPartFallbackHtml(partXml) {
@@ -193,9 +244,13 @@ async function docxToEmailHtml(arrayBuffer) {
     throw new Error("В файле нет содержимого Word. Проверьте, что это настоящий .docx.");
   }
 
+  const documentXml = await zip.file("word/document.xml").async("text");
+  const pageCount = countDocxPages(documentXml);
+  const mammothBuffer = await buildDocxArrayBufferForMammoth(arrayBuffer, JSZipLib);
+
   let bodyHtml = "";
   try {
-    bodyHtml = await convertDocxBufferToHtml(arrayBuffer, mammothLib, imageOptions);
+    bodyHtml = await convertDocxBufferToHtml(mammothBuffer, mammothLib, imageOptions);
   } catch (error) {
     const message = String(error?.message || "");
     if (/body element|docx file/i.test(message)) {
@@ -249,7 +304,11 @@ async function docxToEmailHtml(arrayBuffer) {
     }
   }
 
-  return sanitizeEmailImportHtml([...headerBlocks, bodyHtml, ...footerBlocks].join("\n"));
+  return {
+    htmlBody: sanitizeEmailImportHtml([...headerBlocks, bodyHtml, ...footerBlocks].join("\n")),
+    pageCount,
+    source: "docx",
+  };
 }
 
 async function pdfToEmailHtml(arrayBuffer) {
@@ -285,7 +344,11 @@ async function pdfToEmailHtml(arrayBuffer) {
     );
   }
 
-  return sanitizeEmailImportHtml(pages.join("\n"));
+  return {
+    htmlBody: sanitizeEmailImportHtml(pages.join("\n")),
+    pageCount: pdf.numPages,
+    source: "pdf",
+  };
 }
 
 async function svgToEmailHtml(arrayBuffer) {
@@ -296,9 +359,13 @@ async function svgToEmailHtml(arrayBuffer) {
     throw new Error("Файл не похож на SVG.");
   }
 
-  return sanitizeEmailImportHtml(
-    `<p><img src="${dataUrl}" alt="SVG" style="display:block;max-width:100%;height:auto;" /></p>`
-  );
+  return {
+    htmlBody: sanitizeEmailImportHtml(
+      `<p><img src="${dataUrl}" alt="SVG" style="display:block;max-width:100%;height:auto;" /></p>`
+    ),
+    pageCount: 1,
+    source: "svg",
+  };
 }
 
 export async function importEmailTemplateFromFile(file) {
@@ -315,11 +382,11 @@ export async function importEmailTemplateFromFile(file) {
   const arrayBuffer = await file.arrayBuffer();
 
   if (isPdfFile(filename, mimeType)) {
-    const htmlBody = await pdfToEmailHtml(arrayBuffer);
-    if (!htmlBody.trim()) {
+    const imported = await pdfToEmailHtml(arrayBuffer);
+    if (!imported.htmlBody.trim()) {
       throw new Error("Не удалось прочитать PDF.");
     }
-    return { htmlBody };
+    return imported;
   }
 
   const looksLikeDocx =
@@ -329,11 +396,11 @@ export async function importEmailTemplateFromFile(file) {
     (mimeType === "application/octet-stream" && /\.docx$/i.test(filename));
 
   if (looksLikeDocx) {
-    const htmlBody = await docxToEmailHtml(arrayBuffer);
-    if (!htmlBody.trim()) {
+    const imported = await docxToEmailHtml(arrayBuffer);
+    if (!imported.htmlBody.trim()) {
       throw new Error("Не удалось прочитать DOCX.");
     }
-    return { htmlBody };
+    return imported;
   }
 
   if (isLegacyWordFile(filename, mimeType)) {
@@ -341,11 +408,11 @@ export async function importEmailTemplateFromFile(file) {
   }
 
   if (isSvgFile(filename, mimeType)) {
-    const htmlBody = await svgToEmailHtml(arrayBuffer);
-    if (!htmlBody.trim()) {
+    const imported = await svgToEmailHtml(arrayBuffer);
+    if (!imported.htmlBody.trim()) {
       throw new Error("Не удалось прочитать SVG.");
     }
-    return { htmlBody };
+    return imported;
   }
 
   throw new Error("Поддерживаются только PDF, DOCX и SVG.");
