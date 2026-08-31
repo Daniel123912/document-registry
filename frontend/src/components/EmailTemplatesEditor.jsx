@@ -28,6 +28,8 @@ import {
   LAYOUT_KIND_BAKOR,
   normalizeOutgoingRequisitesInTemplate,
   OUTGOING_REQUISITES_SNIPPET,
+  extractLetterRecipientFromHtml,
+  resolveLetterSubject,
 } from "../utils/bakorLetterTemplate";
 
 function emptyDraft() {
@@ -48,7 +50,6 @@ export default function EmailTemplatesEditor({
   onNotice,
   onError,
   onBack,
-  autoCreate = false,
 }) {
   const [templates, setTemplates] = useState([]);
   const [activeTemplateId, setActiveTemplateId] = useState(null);
@@ -65,19 +66,24 @@ export default function EmailTemplatesEditor({
   const importInputRef = useRef(null);
   const toolbarRef = useRef(null);
   const editorRef = useRef(null);
-  const autoCreateStartedRef = useRef(false);
 
   const activeTemplate = useMemo(
     () => templates.find((template) => template.id === activeTemplateId) || null,
     [activeTemplateId, templates]
   );
 
+  const effectiveSubject = resolveLetterSubject({
+    layoutKind: draft.layoutKind,
+    htmlBody: draft.htmlBody,
+    subject: draft.subject,
+  });
+
   const canSave = Boolean(
     activeTemplate &&
       !saving &&
       !importing &&
       draft.name.trim() &&
-      draft.subject.trim() &&
+      effectiveSubject &&
       draft.htmlBody.trim()
   );
 
@@ -134,19 +140,6 @@ export default function EmailTemplatesEditor({
   }, [folderId, token]);
 
   useEffect(() => {
-    autoCreateStartedRef.current = false;
-  }, [folderId, autoCreate]);
-
-  useEffect(() => {
-    if (!autoCreate || loading || creating || autoCreateStartedRef.current) {
-      return;
-    }
-
-    autoCreateStartedRef.current = true;
-    handleCreateTemplate();
-  }, [autoCreate, loading, creating, templates.length]);
-
-  useEffect(() => {
     if (!activeTemplate) {
       setDraft(emptyDraft());
       return;
@@ -154,7 +147,11 @@ export default function EmailTemplatesEditor({
 
     setDraft({
       name: activeTemplate.name || "",
-      subject: activeTemplate.subject || "",
+      subject: resolveLetterSubject({
+        layoutKind: activeTemplate.layoutKind || "default",
+        htmlBody: activeTemplate.htmlBody || "",
+        subject: activeTemplate.subject || "",
+      }),
       triggerKind: activeTemplate.triggerKind || "publish",
       layoutKind: activeTemplate.layoutKind || "default",
       isDefault: Boolean(activeTemplate.isDefault),
@@ -337,7 +334,7 @@ export default function EmailTemplatesEditor({
         folderId: folderId ?? null,
         name: draft.name,
         htmlBody,
-        subject: draft.subject,
+        subject: resolveLetterSubject({ ...draft, htmlBody }),
         triggerKind: draft.triggerKind,
         layoutKind: draft.layoutKind,
         isDefault: draft.isDefault,
@@ -446,17 +443,24 @@ export default function EmailTemplatesEditor({
               />
             </label>
 
-            <label className="form-field">
-              Тема письма
-              <input
-                className="field-input"
-                value={draft.subject}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, subject: event.target.value }))
-                }
-                placeholder="Документ на ознакомление: {{title}}"
-              />
-            </label>
+            {isBakorLetterLayout(draft.layoutKind) ? (
+              <p className="helper">
+                Тема письма берётся из поля <strong>Кому:</strong> в шапке
+                {effectiveSubject ? `: «${effectiveSubject}»` : " — укажите «Кому» в тексте шаблона"}
+              </p>
+            ) : (
+              <label className="form-field">
+                Тема письма
+                <input
+                  className="field-input"
+                  value={draft.subject}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, subject: event.target.value }))
+                  }
+                  placeholder="Документ на ознакомление: {{title}}"
+                />
+              </label>
+            )}
 
             <div className="email-template-meta-row">
               <label className="form-field email-template-default-field">
@@ -530,10 +534,17 @@ export default function EmailTemplatesEditor({
                             data={draft.htmlBody}
                             onReady={handleEditorReady}
                             onChange={(_event, editor) => {
-                              setDraft((current) => ({
-                                ...current,
-                                htmlBody: editor.getData(),
-                              }));
+                              const htmlBody = editor.getData();
+                              setDraft((current) => {
+                                const nextDraft = { ...current, htmlBody };
+                                if (isBakorLetterLayout(current.layoutKind)) {
+                                  const recipient = extractLetterRecipientFromHtml(htmlBody);
+                                  if (recipient) {
+                                    nextDraft.subject = recipient;
+                                  }
+                                }
+                                return nextDraft;
+                              });
                             }}
                             onError={(editorError) => {
                               onError(editorError.message || "Не удалось загрузить редактор.");

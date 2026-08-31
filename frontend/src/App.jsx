@@ -117,7 +117,6 @@ function App() {
   const [activeLetterId, setActiveLetterId] = useState(null);
   const [letters, setLetters] = useState([]);
   const [lettersLoading, setLettersLoading] = useState(false);
-  const [templateAutoCreate, setTemplateAutoCreate] = useState(false);
   const [lettersComposeKey, setLettersComposeKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [documents, setDocuments] = useState([]);
@@ -694,7 +693,6 @@ function App() {
     setLettersFolderId(folderId);
     setLettersView("list");
     setActiveLetterId(null);
-    setTemplateAutoCreate(false);
     setLettersOpen(true);
     setSelectedDocumentId(null);
   }
@@ -704,17 +702,15 @@ function App() {
     setLettersFolderId(folderId ?? null);
     setLettersView("list");
     setActiveLetterId(null);
-    setTemplateAutoCreate(false);
     setLettersOpen(true);
     setSelectedDocumentId(null);
   }
 
-  function openLetterTemplates(folderId, autoCreate = false) {
+  function openLetterTemplates(folderId) {
     setSection("letters");
     setLettersFolderId(folderId ?? null);
     setLettersView("templates");
     setActiveLetterId(null);
-    setTemplateAutoCreate(autoCreate);
     setLettersOpen(true);
     setSelectedDocumentId(null);
   }
@@ -735,7 +731,6 @@ function App() {
     setLettersFolderId(folderId ?? null);
     setLettersView("compose");
     setActiveLetterId(letterId);
-    setTemplateAutoCreate(false);
     setLettersComposeKey((current) => current + 1);
     setLettersOpen(true);
     setSelectedDocumentId(null);
@@ -918,7 +913,7 @@ function App() {
         onCreateEmailFolder={handleCreateEmailFolder}
         onRenameEmailFolder={handleRenameEmailFolder}
         onDeleteEmailFolder={handleDeleteEmailFolder}
-        onAddLetterTemplate={(folderId) => openLetterTemplates(folderId, true)}
+        onViewLetterTemplates={(folderId) => openLetterTemplates(folderId)}
         onComposeLetter={(folderId) => openLetterCompose(folderId)}
         onCreate={openCreateModal}
         onLogout={logout}
@@ -945,7 +940,6 @@ function App() {
                 listTitle={listTitle}
                 folderId={lettersFolderId}
                 token={token}
-                autoCreate={templateAutoCreate}
                 onBack={() => openLettersList(lettersFolderId)}
                 onNotice={setNotice}
                 onError={setError}

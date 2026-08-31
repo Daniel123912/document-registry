@@ -22,13 +22,14 @@ import {
 import LetterTemplate from "./LetterTemplate";
 import {
   applyOutgoingRequisites,
-  buildLetterPrintDocument,
+  extractLetterRecipientFromHtml,
   isBakorLetterLayout,
   LAYOUT_KIND_BAKOR,
   normalizeOutgoingRequisitesInTemplate,
   OUTGOING_REQUISITES_SNIPPET,
+  resolveLetterSubject,
 } from "../utils/bakorLetterTemplate";
-import { downloadLetterAsPdf, downloadLetterAsWord } from "../utils/letterExport";
+import { downloadLetterAsPdf, downloadLetterAsWord, printLetter } from "../utils/letterExport";
 
 export default function LetterComposer({
   token,
@@ -81,14 +82,34 @@ export default function LetterComposer({
   }
 
   function mapLetterToDraft(letter) {
+    const htmlBody = letter.htmlBody || "<p></p>";
+    const layoutKind = letter.layoutKind || LAYOUT_KIND_BAKOR;
+
     return {
-      subject: letter.subject || "",
-      htmlBody: letter.htmlBody || "<p></p>",
-      layoutKind: letter.layoutKind || LAYOUT_KIND_BAKOR,
+      subject: resolveLetterSubject({
+        layoutKind,
+        htmlBody,
+        subject: letter.subject || "",
+      }),
+      htmlBody,
+      layoutKind,
       status: letter.status,
       outgoingNumber: letter.outgoingNumber || 0,
       outgoingDate: letter.outgoingDate || null,
     };
+  }
+
+  function syncDraftFromHtmlBody(htmlBody, current) {
+    const nextDraft = { ...current, htmlBody };
+
+    if (isBakorLetterLayout(current.layoutKind)) {
+      const recipient = extractLetterRecipientFromHtml(htmlBody);
+      if (recipient) {
+        nextDraft.subject = recipient;
+      }
+    }
+
+    return nextDraft;
   }
 
   useEffect(() => {
@@ -216,45 +237,20 @@ export default function LetterComposer({
     return isEditorCommandEnabled(editorRef, commandName);
   }
 
-  function printEditorContent() {
+  async function printEditorContent() {
     const editor = editorRef.current;
     if (!editor) {
       return;
     }
 
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      onError("Браузер заблокировал окно печати.");
-      return;
+    try {
+      await printLetter(editor.getData(), {
+        subject: draft.subject,
+        layoutKind: draft.layoutKind,
+      });
+    } catch (requestError) {
+      onError(requestError.message);
     }
-
-    const html = editor.getData();
-    const documentHtml = isBakorLetterLayout(draft.layoutKind)
-      ? buildLetterPrintDocument(html)
-      : `<!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <title>Печать письма</title>
-    <style>
-      body {
-        font-family: Arial, Helvetica, sans-serif;
-        line-height: 1.6;
-        padding: 40px;
-        color: #1f2933;
-      }
-      img { max-width: 100%; height: auto; }
-      table { width: 100%; border-collapse: collapse; }
-      td, th { border: 1px solid #d5dde6; padding: 8px 10px; }
-    </style>
-  </head>
-  <body>${html}</body>
-</html>`;
-
-    printWindow.document.write(documentHtml);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
   }
 
   function applyTemplate(templateId) {
@@ -275,10 +271,15 @@ export default function LetterComposer({
         outgoingNumber,
         outgoingDate
       );
+      const layoutKind = template.layoutKind || LAYOUT_KIND_BAKOR;
       const nextDraft = {
-        subject: template.subject || "",
+        subject: resolveLetterSubject({
+          layoutKind,
+          htmlBody,
+          subject: template.subject || "",
+        }),
         htmlBody,
-        layoutKind: template.layoutKind || LAYOUT_KIND_BAKOR,
+        layoutKind,
       };
 
       if (editorRef.current) {
@@ -303,9 +304,10 @@ export default function LetterComposer({
     setSaving(true);
     onError("");
     try {
+      const subject = resolveLetterSubject(draft);
       const updated = await updateLetter(token, currentLetterId, {
         folderId: folderId ?? null,
-        subject: draft.subject,
+        subject,
         htmlBody: draft.htmlBody,
         layoutKind: draft.layoutKind,
       });
@@ -337,7 +339,7 @@ export default function LetterComposer({
     try {
       await updateLetter(token, currentLetterId, {
         folderId: folderId ?? null,
-        subject: draft.subject,
+        subject: resolveLetterSubject(draft),
         htmlBody: draft.htmlBody,
         layoutKind: draft.layoutKind,
       });
@@ -404,9 +406,9 @@ export default function LetterComposer({
     return editorRef.current?.getData() || draft.htmlBody;
   }
 
-  function handleDownloadWord() {
+  async function handleDownloadWord() {
     try {
-      downloadLetterAsWord(getLetterHtml(), {
+      await downloadLetterAsWord(getLetterHtml(), {
         subject: draft.subject,
         layoutKind: draft.layoutKind,
       });
@@ -415,9 +417,10 @@ export default function LetterComposer({
     }
   }
 
-  function handleDownloadPdf() {
+  async function handleDownloadPdf() {
     try {
-      downloadLetterAsPdf(getLetterHtml(), {
+      await downloadLetterAsPdf(getLetterHtml(), {
+        subject: draft.subject,
         layoutKind: draft.layoutKind,
       });
     } catch (requestError) {
@@ -494,17 +497,24 @@ export default function LetterComposer({
               </label>
             ) : null}
 
-            <label className="form-field">
-              Тема письма
-              <input
-                className="field-input"
-                value={draft.subject}
-                disabled={!canEdit}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, subject: event.target.value }))
-                }
-              />
-            </label>
+            {isBakorLetterLayout(draft.layoutKind) ? (
+              <p className="helper">
+                Тема письма берётся из поля <strong>Кому:</strong> в шапке
+                {draft.subject ? `: «${draft.subject}»` : " — заполните «Кому» в тексте письма"}
+              </p>
+            ) : (
+              <label className="form-field">
+                Тема письма
+                <input
+                  className="field-input"
+                  value={draft.subject}
+                  disabled={!canEdit}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, subject: event.target.value }))
+                  }
+                />
+              </label>
+            )}
 
             <label className="form-field email-template-default-field">
               <span>Макет страницы</span>
@@ -564,10 +574,9 @@ export default function LetterComposer({
                             disabled={!canEdit}
                             onReady={handleEditorReady}
                             onChange={(_event, editor) => {
-                              setDraft((current) => ({
-                                ...current,
-                                htmlBody: editor.getData(),
-                              }));
+                              setDraft((current) =>
+                                syncDraftFromHtmlBody(editor.getData(), current)
+                              );
                             }}
                             onError={(editorError) => {
                               onError(editorError.message || "Не удалось загрузить редактор.");
@@ -588,10 +597,9 @@ export default function LetterComposer({
                           disabled={!canEdit}
                           onReady={handleEditorReady}
                           onChange={(_event, editor) => {
-                            setDraft((current) => ({
-                              ...current,
-                              htmlBody: editor.getData(),
-                            }));
+                            setDraft((current) =>
+                              syncDraftFromHtmlBody(editor.getData(), current)
+                            );
                           }}
                           onError={(editorError) => {
                             onError(editorError.message || "Не удалось загрузить редактор.");

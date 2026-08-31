@@ -152,34 +152,49 @@ export const LETTER_PAGE_CSS = `
 
 @media print {
   @page {
-    size: A4;
+    size: 210mm 297mm;
     margin: 0;
   }
 
+  html,
   body {
     margin: 0;
     padding: 0;
     background: #fff;
+    width: 210mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .letter-page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
     box-shadow: none;
+    overflow: visible;
   }
 
   .letter-page__header-img,
-  .letter-page__footer-img {
-    position: fixed;
-  }
-
+  .letter-page__footer-img,
   .letter-page-turn__footer,
   .letter-page-turn__header {
-    display: none;
+    position: absolute;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .letter-page__content .letter-page-turn {
-    height: 0;
-    margin: 0;
-    border: 0;
+    border-top-color: transparent;
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .letter-page__content img,
+  .letter-page__header-img,
+  .letter-page__footer-img,
+  .letter-page-turn__footer,
+  .letter-page-turn__header {
+    max-width: none;
   }
 }
 `.trim();
@@ -313,6 +328,53 @@ export function isBakorLetterLayout(layoutKind) {
   return layoutKind === LAYOUT_KIND_BAKOR;
 }
 
+function stripHtmlFragment(fragment) {
+  return String(fragment || "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function extractLetterRecipientFromHtml(html) {
+  if (!html) {
+    return "";
+  }
+
+  const patterns = [
+    /<strong>\s*Кому:\s*<\/strong>\s*([\s\S]*?)<\/p>/i,
+    /<b>\s*Кому:\s*<\/b>\s*([\s\S]*?)<\/p>/i,
+    /Кому:\s*<\/(?:strong|b)>\s*([\s\S]*?)<\/p>/i,
+    /Кому:\s*([^<\n\r]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      const value = stripHtmlFragment(match[1]);
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  return "";
+}
+
+export function resolveLetterSubject({ layoutKind, htmlBody, subject }) {
+  if (!isBakorLetterLayout(layoutKind)) {
+    return String(subject || "").trim();
+  }
+
+  return extractLetterRecipientFromHtml(htmlBody) || String(subject || "").trim();
+}
+
 export function wrapLetterBodyHtml(contentHtml, { headerSrc, footerSrc } = {}) {
   const header = headerSrc || LETTER_HEADER_IMAGE;
   const footer = footerSrc || LETTER_FOOTER_IMAGE;
@@ -326,7 +388,10 @@ export function wrapLetterBodyHtml(contentHtml, { headerSrc, footerSrc } = {}) {
 
 export function buildLetterPrintDocument(contentHtml, { headerSrc, footerSrc } = {}) {
   const body = wrapLetterBodyHtml(contentHtml, { headerSrc, footerSrc });
+  return buildLetterPrintShell(body);
+}
 
+export function buildLetterPrintShell(bodyHtml) {
   return `<!DOCTYPE html>
 <html lang="ru">
   <head>
@@ -334,6 +399,6 @@ export function buildLetterPrintDocument(contentHtml, { headerSrc, footerSrc } =
     <title>Печать письма</title>
     <style>${LETTER_PAGE_CSS}</style>
   </head>
-  <body>${body}</body>
+  <body>${bodyHtml}</body>
 </html>`;
 }

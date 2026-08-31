@@ -202,7 +202,7 @@ export default function Sidebar({
   onCreateEmailFolder,
   onRenameEmailFolder,
   onDeleteEmailFolder,
-  onAddLetterTemplate,
+  onViewLetterTemplates,
   onComposeLetter,
   onCreate,
   onLogout,
@@ -588,14 +588,14 @@ export default function Sidebar({
                 role="menuitem"
                 onClick={() => {
                   if (contextMenu.kind === "email-folder") {
-                    onAddLetterTemplate(contextMenu.folder.id);
+                    onViewLetterTemplates(contextMenu.folder.id);
                   } else {
-                    onAddLetterTemplate(null);
+                    onViewLetterTemplates(null);
                   }
                   setContextMenu(null);
                 }}
               >
-                Добавить шаблон
+                Посмотреть шаблоны
               </button>
               <button
                 type="button"
