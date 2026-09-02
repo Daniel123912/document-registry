@@ -204,17 +204,21 @@ async function buildAssignmentEmail({ row, kind, changeReason }) {
       : "";
 
   const templateKind = kind === "new_version" ? "new_version" : "publish";
-  const fromTemplate = await buildEmailFromTemplate(templateKind, {
-    fullName: escapeHtml(row.full_name || ""),
-    title: escapeHtml(title),
-    authorName: escapeHtml(authorName),
-    versionNo: escapeHtml(versionNo),
-    link: escapeHtml(link),
-    changeReasonBlock,
-  });
+  try {
+    const fromTemplate = await buildEmailFromTemplate(templateKind, {
+      fullName: escapeHtml(row.full_name || ""),
+      title: escapeHtml(title),
+      authorName: escapeHtml(authorName),
+      versionNo: escapeHtml(versionNo),
+      link: escapeHtml(link),
+      changeReasonBlock,
+    });
 
-  if (fromTemplate) {
-    return fromTemplate;
+    if (fromTemplate?.subject && fromTemplate?.html) {
+      return fromTemplate;
+    }
+  } catch (error) {
+    console.error(`[mail] Не удалось собрать письмо из шаблона (${templateKind}):`, error.message);
   }
 
   return buildFallbackAssignmentEmail({ row, kind, changeReason });

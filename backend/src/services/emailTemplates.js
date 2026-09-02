@@ -1,5 +1,4 @@
 const { query, withTransaction } = require("../db");
-const { composeLetterHtml, isBakorLetterLayout } = require("../utils/letterLayout");
 const { normalizeOutgoingRequisitesInTemplate } = require("../utils/letterOutgoing");
 
 const TRIGGER_KINDS = ["publish", "new_version"];
@@ -114,19 +113,79 @@ async function clearDefaultForTrigger(client, triggerKind, exceptId = null) {
   );
 }
 
-async function seedDefaultTemplates() {
-  for (const template of DEFAULT_TEMPLATES) {
-    await query(
+async function ensureSimpleDefaultTemplate(client, template) {
+  const currentDefault = await client.query(
+    `
+      SELECT id, layout_kind
+      FROM email_templates
+      WHERE trigger_kind = $1
+        AND is_default = TRUE
+      ORDER BY id ASC
+      LIMIT 1
+    `,
+    [template.triggerKind]
+  );
+
+  const row = currentDefault.rows[0];
+  if (row && row.layout_kind === "default") {
+    return;
+  }
+
+  if (row) {
+    await client.query(
       `
-        INSERT INTO email_templates (folder_id, trigger_kind, name, subject, html_body, is_default)
-        SELECT NULL, $1, $2, $3, $4, TRUE
-        WHERE NOT EXISTS (
-          SELECT 1 FROM email_templates WHERE trigger_kind = $1 AND is_default = TRUE
-        )
+        UPDATE email_templates
+        SET is_default = FALSE, updated_at = NOW()
+        WHERE id = $1
       `,
-      [template.triggerKind, template.name, template.subject, template.htmlBody]
+      [row.id]
     );
   }
+
+  const existing = await client.query(
+    `
+      SELECT id
+      FROM email_templates
+      WHERE trigger_kind = $1
+        AND layout_kind = 'default'
+        AND name = $2
+      ORDER BY id ASC
+      LIMIT 1
+    `,
+    [template.triggerKind, template.name]
+  );
+
+  if (existing.rows[0]) {
+    await client.query(
+      `
+        UPDATE email_templates
+        SET subject = $2,
+            html_body = $3,
+            layout_kind = 'default',
+            is_default = TRUE,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [existing.rows[0].id, template.subject, template.htmlBody]
+    );
+    return;
+  }
+
+  await client.query(
+    `
+      INSERT INTO email_templates (folder_id, trigger_kind, layout_kind, name, subject, html_body, is_default)
+      VALUES (NULL, $1, 'default', $2, $3, $4, TRUE)
+    `,
+    [template.triggerKind, template.name, template.subject, template.htmlBody]
+  );
+}
+
+async function seedDefaultTemplates() {
+  await withTransaction(async (client) => {
+    for (const template of DEFAULT_TEMPLATES) {
+      await ensureSimpleDefaultTemplate(client, template);
+    }
+  });
 }
 
 async function listEmailTemplates({ folderId } = {}) {
@@ -175,13 +234,33 @@ async function getDefaultEmailTemplate(triggerKind) {
       FROM email_templates
       WHERE trigger_kind = $1
         AND is_default = TRUE
+        AND layout_kind = 'default'
       ORDER BY id ASC
       LIMIT 1
     `,
     [triggerKind]
   );
 
-  return result.rows[0] ? mapRow(result.rows[0]) : null;
+  if (result.rows[0]) {
+    return mapRow(result.rows[0]);
+  }
+
+  const fallback = DEFAULT_TEMPLATES.find((template) => template.triggerKind === triggerKind);
+  if (!fallback) {
+    return null;
+  }
+
+  return {
+    id: null,
+    folderId: null,
+    triggerKind: fallback.triggerKind,
+    layoutKind: "default",
+    name: fallback.name,
+    subject: fallback.subject,
+    htmlBody: fallback.htmlBody,
+    isDefault: true,
+    updatedAt: null,
+  };
 }
 
 async function createEmailTemplate({
@@ -340,10 +419,7 @@ async function buildEmailFromTemplate(triggerKind, variables) {
   }
 
   const subject = renderTemplate(template.subject, variables);
-  const bodyHtml = renderTemplate(template.htmlBody, variables);
-  const html = isBakorLetterLayout(template.layoutKind)
-    ? composeLetterHtml(bodyHtml)
-    : bodyHtml;
+  const html = renderTemplate(template.htmlBody, variables);
   const text = htmlToPlainText(html);
 
   return { subject, html, text };
