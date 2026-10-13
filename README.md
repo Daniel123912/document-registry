@@ -114,3 +114,27 @@ npm run dev
 
 - Frontend: `http://127.0.0.1:5173`
 - Backend API: `http://127.0.0.1:4011`
+
+## Сервер (VPS)
+
+Публичный сайт: [http://151.248.113.156/](http://151.248.113.156/). Nginx отдаёт `frontend/dist` и проксирует API на `127.0.0.1:4011` (см. `deploy/remote-setup.sh`).
+
+При сборке фронта для сервера **не задавайте** `VITE_API_URL` (или оставьте пустым): браузер обращается к тому же адресу, что и страница. Локально в `frontend/.env` укажите `VITE_API_URL=http://localhost:4011`.
+
+Первичная установка на чистый VPS (root, Ubuntu/Debian):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Daniel123912/document-registry/master/deploy/remote-setup.sh | bash
+```
+
+После изменений в репозитории на сервере:
+
+```bash
+bash /opt/bakor-docflow/deploy/update-app.sh
+```
+
+Только пересобрать фронт:
+
+```bash
+bash /opt/bakor-docflow/deploy/update-frontend.sh
+```

@@ -1,11 +1,18 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+// На сервере nginx проксирует /auth, /documents и т.д. на backend — запросы с того же origin (пустой base URL).
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? "http://localhost:4011" : "");
+
+const OFFLINE_MESSAGE = import.meta.env.DEV
+  ? "Нет связи с сервером. Запустите backend: cd backend && npm run dev"
+  : "Нет связи с сервером. Проверьте, что API на сервере запущен (pm2 status bakor-api).";
 
 async function request(path, options = {}) {
   let response;
   try {
     response = await fetch(`${API_URL}${path}`, options);
   } catch (error) {
-    throw new Error("Нет связи с сервером. Запустите backend: cd backend && npm run dev");
+    throw new Error(OFFLINE_MESSAGE);
   }
 
   const data = await response.json().catch(() => ({}));
@@ -313,7 +320,7 @@ export async function fetchDocumentFile(token, documentId, versionNo) {
       headers: authHeaders(token),
     });
   } catch (error) {
-    throw new Error("Нет связи с сервером. Запустите backend: cd backend && npm run dev");
+    throw new Error(OFFLINE_MESSAGE);
   }
 
   if (!response.ok) {
