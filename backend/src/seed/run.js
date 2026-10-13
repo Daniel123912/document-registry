@@ -5,9 +5,8 @@ async function seed() {
   await initializeDatabase();
   await seedAllDemoUsers();
 
-  console.log("Seed completed.");
-  console.log("Responsible: responsible@bakor.local / admin1234");
-  console.log("Employees: employee@bakor.local ... employee40@bakor.local / user1234");
+  console.log("Database schema ready.");
+  console.log("Сотрудников в seed нет — создайте их в панели модератора (/moderator).");
   process.exit(0);
 }
 

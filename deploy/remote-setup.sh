@@ -3,7 +3,8 @@ set -euo pipefail
 
 APP_DIR="/opt/bakor-docflow"
 REPO_URL="https://github.com/Daniel123912/document-registry.git"
-PUBLIC_URL="http://151.248.113.156"
+DOMAIN="${DOMAIN:-docs.nerohub.ru}"
+PUBLIC_URL="${PUBLIC_URL:-https://${DOMAIN}}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -34,13 +35,12 @@ fi
 docker compose up -d
 
 JWT_SECRET="$(openssl rand -hex 32)"
-VAULT_KEY="$(openssl rand -hex 32)"
 DB_PASS="123456"
 
 cat > "$APP_DIR/backend/.env" <<EOF
 PORT=4011
 JWT_SECRET=${JWT_SECRET}
-PASSWORD_VAULT_KEY=${VAULT_KEY}
+PASSWORD_VAULT_KEY=
 MODERATOR_LOGIN=moderator
 MODERATOR_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 16)
 DB_HOST=localhost
@@ -79,11 +79,11 @@ npm ci
 # Пустой VITE_API_URL: в production client.js ходит на тот же origin (/auth, /documents… через nginx).
 VITE_API_URL= npm run build
 
-cat > /etc/nginx/sites-available/bakor-docflow <<'NGINX'
+cat > /etc/nginx/sites-available/bakor-docflow <<NGINX
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
+    server_name ${DOMAIN} 151.248.113.156;
 
     root /opt/bakor-docflow/frontend/dist;
     index index.html;
@@ -98,23 +98,23 @@ server {
     location ~ ^/(auth|users|documents|folders|reports|email-templates|email-template-folders|letters|health) {
         proxy_pass http://127.0.0.1:4011;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location ^~ /moderator/ {
         proxy_pass http://127.0.0.1:4011;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 }
 NGINX
@@ -126,5 +126,5 @@ systemctl enable nginx
 systemctl restart nginx
 
 echo "DEPLOY_OK"
-echo "Site: ${PUBLIC_URL}"
+echo "Site: ${PUBLIC_URL} (HTTP; для HTTPS: CERTBOT_EMAIL=you@example.com bash ${APP_DIR}/deploy/configure-domain.sh)"
 echo "Moderator password: $(grep MODERATOR_PASSWORD "$APP_DIR/backend/.env" | cut -d= -f2-)"

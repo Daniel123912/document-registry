@@ -20,7 +20,7 @@ backend/src/
   services/              бизнес-логика документов и отчетов
   middleware/            asyncHandler и обработка ошибок
   utils/                 файлы, имена, сериализация
-  seed/                  демо-пользователи
+  seed/                  инициализация схемы БД (без демо-пользователей)
 backend/tests/           тесты схемы и имен файлов
 
 frontend/src/
@@ -75,6 +75,23 @@ PDF, Word, Excel и изображения пишутся на диск, не в
 
 Копируйте данные PostgreSQL и папку `backend/uploads/`. Одна база без файлов или файлы без базы — неполный архив.
 
+Восстановление дампа на VPS (PostgreSQL в Docker, как в `deploy/remote-setup.sh`):
+
+```bash
+# с вашего ПК (PowerShell), файл в каталог приложения на сервере
+scp "backup/my_project_db_2026-10-13.sql" root@151.248.113.156:/opt/bakor-docflow/backup.sql
+
+# на сервере
+cd /opt/bakor-docflow
+docker compose exec -T postgres psql -U postgres -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'my_project_db' AND pid <> pg_backend_pid();"
+docker compose exec -T postgres psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS my_project_db;"
+docker compose exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE my_project_db;"
+docker compose exec -T postgres psql -U postgres -d my_project_db < backup.sql
+pm2 restart bakor-api
+```
+
+Если `psql` ругается на `\restrict` (дамп с PostgreSQL 18, на сервере 17), обновите контейнер до `postgres:18` в `docker-compose.yml` или переснимите дамп без restrict-опций с той же major-версией, что на сервере.
+
 ## Быстрый старт
 
 1. Убедитесь, что локальный PostgreSQL запущен и есть база `my_project_db`:
@@ -93,7 +110,6 @@ CREATE DATABASE my_project_db;
 ```powershell
 cd backend
 npm install
-npm run seed
 npm run dev
 ```
 
@@ -105,10 +121,7 @@ npm install
 npm run dev
 ```
 
-## Демо-пользователи
-
-- Ответственный: `responsible@bakor.local` / `admin1234`
-- Сотрудники (40 шт.): `employee@bakor.local`, `employee2@bakor.local` … `employee40@bakor.local` / `user1234`
+Сотрудников в репозитории не создаётся: после старта API добавьте учётки в [панели модератора](http://127.0.0.1:5173/moderator) (логин/пароль — `MODERATOR_LOGIN` / `MODERATOR_PASSWORD` в `backend/.env`).
 
 ## Порты
 
@@ -117,7 +130,18 @@ npm run dev
 
 ## Сервер (VPS)
 
-Публичный сайт: [http://151.248.113.156/](http://151.248.113.156/). Nginx отдаёт `frontend/dist` и проксирует API на `127.0.0.1:4011` (см. `deploy/remote-setup.sh`).
+Публичный сайт: [https://docs.nerohub.ru/](https://docs.nerohub.ru/) (A-запись `docs.nerohub.ru` → `151.248.113.156`). Nginx отдаёт `frontend/dist` и проксирует API на `127.0.0.1:4011` (см. `deploy/remote-setup.sh`).
+
+Подключение домена и HTTPS на уже работающем VPS:
+
+```bash
+ssh root@151.248.113.156
+cd /opt/bakor-docflow
+git pull
+CERTBOT_EMAIL=ваш@email.ru bash deploy/configure-domain.sh docs.nerohub.ru
+```
+
+Скрипт обновит nginx, выпустит сертификат Let's Encrypt, пропишет `APP_PUBLIC_URL=https://docs.nerohub.ru` и перезапустит API.
 
 При сборке фронта для сервера **не задавайте** `VITE_API_URL` (или оставьте пустым): браузер обращается к тому же адресу, что и страница. Локально в `frontend/.env` укажите `VITE_API_URL=http://localhost:4011`.
 
