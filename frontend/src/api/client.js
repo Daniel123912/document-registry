@@ -232,6 +232,13 @@ export async function createDocument(token, formData) {
   });
 }
 
+export async function fetchNextDocumentNumber(token, type = "order") {
+  const params = new URLSearchParams({ type });
+  return request(`/documents/next-number?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+}
+
 export async function publishDocument(token, documentId) {
   return request(`/documents/${documentId}/publish`, {
     method: "POST",

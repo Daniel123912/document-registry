@@ -80,11 +80,21 @@ function NotifyRecipientsField({
   );
 }
 
-function OrderCreateFields({ createForm, setCreateForm, employeeUsers }) {
+function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPreviewNumber }) {
   return (
     <div className="create-document-order-layout">
       <div className="create-document-order-top">
         <div className="form-row create-document-order-meta">
+          <label className="form-field">
+            Номер
+            <input
+              className="field-input"
+              value={orderPreviewNumber || "…"}
+              readOnly
+              aria-readonly="true"
+              title="Номер присваивается при создании и не переиспользуется"
+            />
+          </label>
           <label className="form-field">
             Тип
             <select
@@ -139,6 +149,7 @@ function OrderCreateFields({ createForm, setCreateForm, employeeUsers }) {
         <span className="create-document-order-field-label">Описание</span>
         <textarea
           className="create-document-order-description"
+          rows={3}
           placeholder="Краткое описание документа"
           value={createForm.description}
           onChange={(event) =>
@@ -185,6 +196,7 @@ export default function CreateDocumentModal({
   folders = [],
   employeeUsers,
   loading,
+  orderPreviewNumber = "",
   onClose,
   onSubmit,
 }) {
@@ -192,7 +204,10 @@ export default function CreateDocumentModal({
   const isOrderType = createForm.type === ORDER_TYPE;
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <div
+      className={["overlay", isOrderType ? "overlay-center" : ""].filter(Boolean).join(" ")}
+      onClick={onClose}
+    >
       <form
         className={["modal", isOrderType ? "create-document-order" : ""].filter(Boolean).join(" ")}
         onClick={(event) => event.stopPropagation()}
@@ -206,6 +221,7 @@ export default function CreateDocumentModal({
               createForm={createForm}
               setCreateForm={setCreateForm}
               employeeUsers={employeeUsers}
+              orderPreviewNumber={orderPreviewNumber}
             />
           ) : (
             <div className="form-grid">

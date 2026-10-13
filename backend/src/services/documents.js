@@ -205,6 +205,8 @@ const DOCUMENT_NUMBER_PREFIXES = {
   legal_entity: "ЮЛ",
 };
 
+const ORDER_DOCUMENT_TYPE = "order";
+
 function normalizeDocumentNumber(value) {
   return String(value || "").trim();
 }
@@ -213,9 +215,67 @@ function isUniqueViolation(error) {
   return error?.code === "23505";
 }
 
+function maxAutoNumberFromRows(rows, prefix) {
+  let maxNumber = 0;
+  for (const row of rows) {
+    const value = normalizeDocumentNumber(row.number).toUpperCase();
+    const match = value.match(new RegExp(`^${prefix}(\\d+)$`));
+    if (!match) {
+      continue;
+    }
+
+    const numericPart = Number(match[1]);
+    if (Number.isFinite(numericPart) && numericPart > maxNumber) {
+      maxNumber = numericPart;
+    }
+  }
+
+  return maxNumber;
+}
+
+async function reserveDocumentNumber(client, { type, number, documentId }) {
+  const normalizedNumber = normalizeDocumentNumber(number);
+  if (!normalizedNumber) {
+    return;
+  }
+
+  await client.query(
+    `
+      INSERT INTO document_number_allocations (type, number, document_id)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (type, number)
+      DO UPDATE SET document_id = EXCLUDED.document_id
+      WHERE document_number_allocations.document_id IS NULL
+        AND EXCLUDED.document_id IS NOT NULL
+    `,
+    [type, normalizedNumber, documentId]
+  );
+}
+
 async function assertDocumentNumberAvailable(client, { type, number, excludeDocumentId = null }) {
   const normalizedNumber = normalizeDocumentNumber(number);
   if (!normalizedNumber) {
+    return;
+  }
+
+  const allocationResult = await client.query(
+    `
+      SELECT document_id
+      FROM document_number_allocations
+      WHERE type = $1 AND number = $2
+      LIMIT 1
+    `,
+    [type, normalizedNumber]
+  );
+
+  if (allocationResult.rows.length) {
+    const holderId = allocationResult.rows[0].document_id;
+    if (holderId == null) {
+      throw httpError(409, "Документ с таким номером уже существует.");
+    }
+    if (excludeDocumentId == null || Number(holderId) !== Number(excludeDocumentId)) {
+      throw httpError(409, "Документ с таким номером уже существует.");
+    }
     return;
   }
 
@@ -238,23 +298,21 @@ async function assertDocumentNumberAvailable(client, { type, number, excludeDocu
 
 async function generateDocumentNumber(client, type) {
   const prefix = DOCUMENT_NUMBER_PREFIXES[type] || "ДК";
-  const existingNumbers = await client.query("SELECT number FROM documents WHERE type = $1", [type]);
+  const existingNumbers = await client.query(
+    `
+      SELECT number FROM document_number_allocations WHERE type = $1
+      UNION
+      SELECT number FROM documents WHERE type = $1
+    `,
+    [type]
+  );
 
-  let maxNumber = 0;
-  for (const row of existingNumbers.rows) {
-    const value = normalizeDocumentNumber(row.number).toUpperCase();
-    const match = value.match(new RegExp(`^${prefix}(\\d+)$`));
-    if (!match) {
-      continue;
-    }
-
-    const numericPart = Number(match[1]);
-    if (Number.isFinite(numericPart) && numericPart > maxNumber) {
-      maxNumber = numericPart;
-    }
-  }
-
+  const maxNumber = maxAutoNumberFromRows(existingNumbers.rows, prefix);
   return `${prefix}${String(maxNumber + 1).padStart(4, "0")}`;
+}
+
+async function getNextDocumentNumber(type) {
+  return withTransaction(async (client) => generateDocumentNumber(client, type));
 }
 
 async function createDocument({ parsed, assignedUsers, file, authorId }) {
@@ -332,6 +390,12 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
               [documentRow.id, userId]
             );
           }
+
+          await reserveDocumentNumber(client, {
+            type: parsed.type,
+            number: documentNumber,
+            documentId: documentRow.id,
+          });
 
           return { ...documentRow, draft_file_path: relativePath };
         });
@@ -579,11 +643,18 @@ async function updateRequisites({ documentId, parsed }) {
 
       const currentDocument = existing.rows[0];
       const manualNumber = normalizeDocumentNumber(parsed.number);
-      const documentNumber =
-        manualNumber ||
-        (normalizeDocumentNumber(currentDocument.number) && currentDocument.type === parsed.type
-          ? normalizeDocumentNumber(currentDocument.number)
-          : await generateDocumentNumber(client, parsed.type));
+      const currentNumber = normalizeDocumentNumber(currentDocument.number);
+      let documentNumber;
+
+      if (parsed.type === ORDER_DOCUMENT_TYPE && currentNumber) {
+        documentNumber = currentNumber;
+      } else {
+        documentNumber =
+          manualNumber ||
+          (currentNumber && currentDocument.type === parsed.type
+            ? currentNumber
+            : await generateDocumentNumber(client, parsed.type));
+      }
 
       await assertDocumentNumberAvailable(client, {
         type: parsed.type,
@@ -631,6 +702,12 @@ async function updateRequisites({ documentId, parsed }) {
           [documentId, userId]
         );
       }
+
+      await reserveDocumentNumber(client, {
+        type: parsed.type,
+        number: documentNumber,
+        documentId,
+      });
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -658,6 +735,11 @@ async function migrateMissingDocumentNumbers() {
         row.id,
         documentNumber,
       ]);
+      await reserveDocumentNumber(client, {
+        type: row.type,
+        number: documentNumber,
+        documentId: row.id,
+      });
       updated += 1;
     }
 
@@ -753,7 +835,7 @@ async function restoreDocument(documentId) {
 
 async function permanentlyDeleteDocument(documentId) {
   const documentResult = await query(
-    "SELECT id, draft_file_path FROM documents WHERE id = $1 AND deleted_at IS NOT NULL",
+    "SELECT id, type, number, draft_file_path FROM documents WHERE id = $1 AND deleted_at IS NOT NULL",
     [documentId]
   );
   const document = documentResult.rows[0];
@@ -771,7 +853,18 @@ async function permanentlyDeleteDocument(documentId) {
     ...versionsResult.rows.map((row) => row.file_path),
   ].filter(Boolean);
 
-  await query("DELETE FROM documents WHERE id = $1", [documentId]);
+  await withTransaction(async (client) => {
+    const normalizedNumber = normalizeDocumentNumber(document.number);
+    if (normalizedNumber) {
+      await reserveDocumentNumber(client, {
+        type: document.type,
+        number: normalizedNumber,
+        documentId: document.id,
+      });
+    }
+
+    await client.query("DELETE FROM documents WHERE id = $1", [documentId]);
+  });
   await removeDocumentStorage(documentId, storedPaths);
 }
 
@@ -908,6 +1001,7 @@ async function acknowledgeDocument({ documentId, versionNo, userId }) {
 module.exports = {
   parseJsonArrayField,
   listDocuments,
+  getNextDocumentNumber,
   createDocument,
   publishDocument,
   createVersion,

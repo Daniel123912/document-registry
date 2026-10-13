@@ -4,6 +4,7 @@ import {
   acknowledgeDocument,
   archiveDocument,
   createDocument,
+  fetchNextDocumentNumber,
   createFolder,
   createEmailTemplateFolder,
   createVersion,
@@ -32,7 +33,7 @@ import {
 import { withReadableFilenames } from "./utils/filenames";
 import { addDays, toIsoDate } from "./utils/dates";
 import { folderPathLabels } from "./utils/folders";
-import { typeLabel, LEGAL_ENTITY_TYPE } from "./constants";
+import { typeLabel, LEGAL_ENTITY_TYPE, ORDER_TYPE } from "./constants";
 import LoginPage from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import DocumentList from "./components/DocumentList";
@@ -118,6 +119,7 @@ function App() {
   const [lettersLoading, setLettersLoading] = useState(false);
   const [lettersComposeKey, setLettersComposeKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [orderPreviewNumber, setOrderPreviewNumber] = useState("");
   const [documents, setDocuments] = useState([]);
   const [assignedDocuments, setAssignedDocuments] = useState([]);
   const [trashDocuments, setTrashDocuments] = useState([]);
@@ -145,6 +147,30 @@ function App() {
     () => assignedDocuments.filter((document) => !document.isAcknowledged).length,
     [assignedDocuments]
   );
+
+  useEffect(() => {
+    if (!createOpen || !token || !isResponsible || createForm.type !== ORDER_TYPE) {
+      setOrderPreviewNumber("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    fetchNextDocumentNumber(token, ORDER_TYPE)
+      .then((result) => {
+        if (!cancelled) {
+          setOrderPreviewNumber(result.number || "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrderPreviewNumber("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createOpen, createForm.type, isResponsible, token]);
 
   const selectedDocument = useMemo(
     () =>
@@ -438,7 +464,11 @@ function App() {
       const result = await createDocument(token, formData);
       setCreateForm(emptyCreateForm);
       setCreateOpen(false);
-      setNotice(result.message);
+      setNotice(
+        result.number && createForm.type === ORDER_TYPE
+          ? `${result.message} Номер: ${result.number}.`
+          : result.message
+      );
       setSection("active");
       setActiveType(createForm.type);
       setActiveFolderId(createForm.folderId ? Number(createForm.folderId) : null);
@@ -988,6 +1018,7 @@ function App() {
           folders={folders}
           employeeUsers={employeeUsers}
           loading={loading}
+          orderPreviewNumber={orderPreviewNumber}
           onClose={() => setCreateOpen(false)}
           onSubmit={handleCreateDocument}
         />

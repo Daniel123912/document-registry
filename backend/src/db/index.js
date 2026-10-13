@@ -67,6 +67,26 @@ async function initializeDatabase() {
   await migrateLettersSchema(query);
   await migrateStoredFilePaths(query);
   await migrateUsersPasswordStorage(query);
+  await migrateDocumentNumberAllocations(query);
+}
+
+async function migrateDocumentNumberAllocations(query) {
+  await query(`
+    CREATE TABLE IF NOT EXISTS document_number_allocations (
+      type TEXT NOT NULL,
+      number TEXT NOT NULL,
+      document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+      allocated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (type, number)
+    )
+  `);
+  await query(`
+    INSERT INTO document_number_allocations (type, number, document_id)
+    SELECT type, TRIM(number), id
+    FROM documents
+    WHERE TRIM(COALESCE(number, '')) <> ''
+    ON CONFLICT (type, number) DO NOTHING
+  `);
 }
 
 async function migrateUsersPasswordStorage(query) {

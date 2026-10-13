@@ -720,13 +720,16 @@ textarea::placeholder {
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .modal.create-document-order .modal-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 22px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px 24px 16px;
 }
 
 .modal.create-document-order .modal-foot {
@@ -736,6 +739,7 @@ textarea::placeholder {
 .modal.create-document-order .modal-title {
   margin-bottom: 16px;
   font-size: 20px;
+  flex-shrink: 0;
 }
 
 .modal.create-document-order .form-field {
@@ -762,14 +766,21 @@ textarea::placeholder {
   font-weight: 600;
 }
 
+.modal.create-document-order .modal-foot {
+  flex-shrink: 0;
+}
+
 .modal.create-document-order .modal-foot .btn {
   padding: 9px 16px;
   font-size: 13px;
 }
 
 .create-document-order-layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(248px, 288px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 16px 20px;
   align-items: stretch;
 }
@@ -782,7 +793,21 @@ textarea::placeholder {
 }
 
 .create-document-order-meta {
-  grid-template-columns: minmax(0, 1fr) 168px;
+  grid-template-columns: 112px minmax(0, 1fr) 156px;
+  align-items: start;
+}
+
+.create-document-order-number-hint {
+  margin: -4px 0 0;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.modal.create-document-order .create-document-order-meta .field-input,
+.modal.create-document-order .create-document-order-meta .field-select {
+  min-height: 40px;
+  box-sizing: border-box;
 }
 
 .create-document-order-description-field {
@@ -802,9 +827,10 @@ textarea::placeholder {
 
 .create-document-order-aside {
   grid-column: 2;
-  grid-row: 1 / span 3;
+  grid-row: 1 / -1;
   align-self: stretch;
   min-height: 0;
+  max-height: none;
 }
 
 .create-document-order-field-label {
@@ -829,8 +855,8 @@ textarea::placeholder {
   box-sizing: border-box;
   width: 100%;
   flex: 1;
-  min-height: clamp(340px, 50vh, 520px);
-  max-height: min(540px, 62vh);
+  min-height: min(340px, calc(100vh - 360px));
+  max-height: min(520px, calc(100vh - 300px));
   line-height: 1.5;
   resize: vertical;
 }
@@ -884,8 +910,8 @@ textarea::placeholder {
 
 .create-document-order-notify .users-box {
   flex: 1;
-  min-height: 80px;
-  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
   margin-top: 0;
   background: #fff;
   border-color: #dce4ec;
@@ -942,8 +968,8 @@ textarea::placeholder {
   }
 
   .create-document-order-description {
-    min-height: 300px;
-    max-height: 400px;
+    min-height: min(300px, calc(100vh - 380px));
+    max-height: min(400px, calc(100vh - 320px));
   }
 }
 

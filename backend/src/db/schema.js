@@ -96,6 +96,15 @@ const schemaStatements = [
       WHERE COALESCE(number, '') <> ''
   `,
   `
+    CREATE TABLE IF NOT EXISTS document_number_allocations (
+      type TEXT NOT NULL,
+      number TEXT NOT NULL,
+      document_id BIGINT REFERENCES documents(id) ON DELETE SET NULL,
+      allocated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (type, number)
+    );
+  `,
+  `
     CREATE INDEX IF NOT EXISTS idx_document_folders_type
       ON document_folders(type);
   `,

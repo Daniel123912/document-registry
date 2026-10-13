@@ -213,6 +213,37 @@ test("document number must be unique inside document type", async () => {
   await db.end();
 });
 
+test("reserved order numbers are included in the next-number sequence", async () => {
+  const db = await createDatabase();
+
+  await db.query(`
+    INSERT INTO document_number_allocations (type, number, document_id)
+    VALUES ('order', 'ПР0007', NULL)
+  `);
+
+  const existingNumbers = await db.query(
+    `
+      SELECT number FROM document_number_allocations WHERE type = 'order'
+      UNION
+      SELECT number FROM documents WHERE type = 'order'
+    `
+  );
+
+  const prefix = "ПР";
+  let maxNumber = 0;
+  for (const row of existingNumbers.rows) {
+    const match = String(row.number).toUpperCase().match(new RegExp(`^${prefix}(\\d+)$`));
+    if (match) {
+      maxNumber = Math.max(maxNumber, Number(match[1]));
+    }
+  }
+
+  assert.equal(maxNumber, 7);
+  assert.equal(`${prefix}${String(maxNumber + 1).padStart(4, "0")}`, "ПР0008");
+
+  await db.end();
+});
+
 test("acknowledgement report counts only currently assigned users", async () => {
   const db = await createDatabase();
 

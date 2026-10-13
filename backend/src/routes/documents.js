@@ -52,6 +52,20 @@ router.get(
 );
 
 router.get(
+  "/next-number",
+  requireAuth,
+  requireResponsible,
+  asyncHandler(async (req, res) => {
+    const schema = z.object({
+      type: z.enum(DOCUMENT_TYPE_VALUES),
+    });
+    const parsed = schema.parse({ type: req.query.type || "order" });
+    const number = await documents.getNextDocumentNumber(parsed.type);
+    res.json({ number });
+  })
+);
+
+router.get(
   "/:id/file",
   requireAuth,
   asyncHandler(async (req, res) => {
@@ -114,6 +128,7 @@ router.post(
     res.status(201).json({
       message: "Документ сохранен как черновик.",
       id: Number(document.id),
+      number: document.number || "",
     });
   })
 );

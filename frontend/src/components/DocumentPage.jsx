@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fetchDocumentFile } from "../api/client";
-import { TYPE_OPTIONS } from "../constants";
+import { ORDER_TYPE, TYPE_OPTIONS } from "../constants";
 import {
   buildLineDiff,
   htmlToLines,
@@ -947,10 +947,16 @@ export default function DocumentPage({
                         <input
                           className="field-input"
                           value={editForm.number}
+                          readOnly={
+                            editForm.type === ORDER_TYPE && Boolean(document.number)
+                          }
                           onChange={(event) =>
                             setEditForm((current) => ({ ...current, number: event.target.value }))
                           }
                         />
+                        {editForm.type === ORDER_TYPE && document.number ? (
+                          <span className="muted">Номер приказа нельзя изменить</span>
+                        ) : null}
                       </label>
 
                       <label className="form-field">
