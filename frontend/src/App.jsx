@@ -104,8 +104,8 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem("bakorToken") || "");
   const [user, setUser] = useState(() => readStoredUser());
   const [authForm, setAuthForm] = useState({
-    email: "responsible@bakor.local",
-    password: "admin1234",
+    email: "",
+    password: "",
   });
   const [section, setSection] = useState("active");
   const [activeType, setActiveType] = useState("order");

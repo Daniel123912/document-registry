@@ -4,12 +4,14 @@ export default function LoginPage({ authForm, setAuthForm, onSubmit, loading, er
       <section className="login-card">
         <h1>Реестр</h1>
         <p>Документы, версии и ознакомление сотрудников.</p>
-        <form className="login-form" onSubmit={onSubmit}>
+        <form className="login-form" onSubmit={onSubmit} autoComplete="off">
           <label>
             Email
             <input
               className="field-input"
               type="email"
+              name="login-email"
+              autoComplete="off"
               value={authForm.email}
               onChange={(event) =>
                 setAuthForm((current) => ({ ...current, email: event.target.value }))
@@ -21,6 +23,8 @@ export default function LoginPage({ authForm, setAuthForm, onSubmit, loading, er
             <input
               className="field-input"
               type="password"
+              name="login-password"
+              autoComplete="new-password"
               value={authForm.password}
               onChange={(event) =>
                 setAuthForm((current) => ({ ...current, password: event.target.value }))
