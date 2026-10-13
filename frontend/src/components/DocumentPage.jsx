@@ -1061,7 +1061,6 @@ export default function DocumentPage({
                             selectedAccessUsers.map((user) => (
                               <div className="access-summary-item" key={user.id}>
                                 <span>{user.fullName}</span>
-                                <span className="muted">{user.email}</span>
                               </div>
                             ))
                           ) : (

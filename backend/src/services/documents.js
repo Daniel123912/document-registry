@@ -258,7 +258,9 @@ async function generateDocumentNumber(client, type) {
 }
 
 async function createDocument({ parsed, assignedUsers, file, authorId }) {
-  const originalName = decodeOriginalFilename(file.originalname);
+  const hasFile = Boolean(file);
+  const originalName = hasFile ? decodeOriginalFilename(file.originalname) : null;
+  const mimeType = hasFile ? file.mimetype : null;
   let documentId;
   const manualNumber = normalizeDocumentNumber(parsed.number);
 
@@ -298,24 +300,27 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
               parsed.dueDate,
               authorId,
               originalName,
-              file.mimetype,
+              mimeType,
               folderId,
             ]
           );
 
           const documentRow = created.rows[0];
           documentId = documentRow.id;
-          const relativePath = await placeUploadedFile({
-            documentId: documentRow.id,
-            uploadedPath: file.path,
-            originalName,
-            slot: "draft",
-          });
+          let relativePath = null;
+          if (hasFile) {
+            relativePath = await placeUploadedFile({
+              documentId: documentRow.id,
+              uploadedPath: file.path,
+              originalName,
+              slot: "draft",
+            });
 
-          await client.query(
-            "UPDATE documents SET draft_file_path = $2 WHERE id = $1",
-            [documentRow.id, relativePath]
-          );
+            await client.query(
+              "UPDATE documents SET draft_file_path = $2 WHERE id = $1",
+              [documentRow.id, relativePath]
+            );
+          }
 
           for (const userId of assignedUsers) {
             await client.query(
@@ -344,7 +349,9 @@ async function createDocument({ parsed, assignedUsers, file, authorId }) {
 
     throw httpError(409, "Не удалось подобрать уникальный номер документа.");
   } catch (error) {
-    await removeIfExists(file.path);
+    if (hasFile) {
+      await removeIfExists(file.path);
+    }
     if (documentId) {
       await removeDocumentStorage(documentId);
     }

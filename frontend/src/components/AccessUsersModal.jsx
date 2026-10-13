@@ -79,9 +79,7 @@ export default function AccessUsersModal({
                     checked={draftIds.includes(candidate.id)}
                     onChange={(event) => toggleUser(candidate.id, event.target.checked)}
                   />
-                  <span>
-                    {candidate.fullName} ({candidate.email})
-                  </span>
+                  <span>{candidate.fullName}</span>
                 </label>
               ))}
               {employeeUsers.length === 0 ? (

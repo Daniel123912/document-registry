@@ -715,6 +715,240 @@ textarea::placeholder {
   width: min(860px, 100%);
 }
 
+.modal.create-document-order {
+  width: min(920px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal.create-document-order .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 24px 22px;
+}
+
+.modal.create-document-order .modal-foot {
+  margin-top: 0;
+}
+
+.modal.create-document-order .modal-title {
+  margin-bottom: 16px;
+  font-size: 20px;
+}
+
+.modal.create-document-order .form-field {
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #5a6775;
+}
+
+.modal.create-document-order .field-input,
+.modal.create-document-order .field-select,
+.modal.create-document-order textarea,
+.modal.create-document-order .file-input {
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.modal.create-document-order .link-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.modal.create-document-order .modal-foot .btn {
+  padding: 9px 16px;
+  font-size: 13px;
+}
+
+.create-document-order-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(248px, 288px);
+  gap: 16px 20px;
+  align-items: stretch;
+}
+
+.create-document-order-top {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  gap: 12px;
+}
+
+.create-document-order-meta {
+  grid-template-columns: minmax(0, 1fr) 168px;
+}
+
+.create-document-order-description-field {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+
+.create-document-order-file {
+  grid-column: 1;
+  grid-row: 3;
+  align-self: start;
+}
+
+.create-document-order-aside {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: stretch;
+  min-height: 0;
+}
+
+.create-document-order-field-label {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.field-optional-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.create-document-order-description {
+  box-sizing: border-box;
+  width: 100%;
+  flex: 1;
+  min-height: clamp(340px, 50vh, 520px);
+  max-height: min(540px, 62vh);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.create-document-order-notify {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #d5dee6;
+  background: linear-gradient(180deg, #fafcfe 0%, #f4f8fc 100%);
+}
+
+.create-document-order-notify-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.create-document-order-notify-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #314354;
+  line-height: 1.35;
+}
+
+.create-document-order-notify-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-strong);
+  background: #fff;
+  border: 1px solid #d5dee6;
+  border-radius: 999px;
+  padding: 2px 8px;
+  line-height: 1.4;
+}
+
+.create-document-order-notify .users-toolbar {
+  margin-bottom: 6px;
+}
+
+.create-document-order-notify .users-box {
+  flex: 1;
+  min-height: 120px;
+  max-height: none;
+  margin-top: 2px;
+  background: #fff;
+  border-color: #dce4ec;
+}
+
+.create-document-order-notify .user-check {
+  align-items: flex-start;
+  padding: 6px 4px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.create-document-order-notify .user-check:hover {
+  background: var(--brand-soft);
+}
+
+.user-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.user-check-name {
+  font-weight: 600;
+  color: #314354;
+  line-height: 1.3;
+}
+
+.user-check-email {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.3;
+  word-break: break-all;
+}
+
+@media (max-width: 760px) {
+  .create-document-order-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .create-document-order-top,
+  .create-document-order-description-field,
+  .create-document-order-file,
+  .create-document-order-aside {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .create-document-order-aside {
+    margin-top: 4px;
+  }
+
+  .create-document-order-description {
+    min-height: 300px;
+    max-height: 400px;
+  }
+}
+
+.form-field .field-optional {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 .overlay.overlay-center {
   align-items: center;
   z-index: 30;

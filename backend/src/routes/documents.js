@@ -100,14 +100,14 @@ router.post(
     const parsed = schema.parse(req.body);
     const assignedUsers = documents.parseJsonArrayField(req.body.assignedUsers).map(Number);
 
-    if (!req.file) {
+    if (!req.file && parsed.type !== "order") {
       return res.status(400).json({ message: "Не удалось загрузить файл." });
     }
 
     const document = await documents.createDocument({
       parsed,
       assignedUsers,
-      file: req.file,
+      file: req.file || null,
       authorId: Number(req.user.sub),
     });
 
