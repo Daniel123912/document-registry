@@ -139,7 +139,7 @@ function App() {
   const pendingDocumentIdRef = useRef(readDocumentIdFromUrl());
   const isResponsible = user?.role === "responsible";
   const employeeUsers = asArray(users).filter(
-    (candidate) => candidate.role === "employee" && candidate.isActive !== false
+    (candidate) => candidate.isActive !== false
   );
   const inboxPendingCount = useMemo(
     () => assignedDocuments.filter((document) => !document.isAcknowledged).length,

@@ -124,7 +124,7 @@ export default function DocumentPage({
   const [comparePreview, setComparePreview] = useState(emptyComparePreview);
 
   const employeeUsers = (Array.isArray(users) ? users : []).filter(
-    (candidate) => candidate.role === "employee" && candidate.isActive !== false
+    (candidate) => candidate.isActive !== false
   );
   const selectedAccessUsers = employeeUsers.filter((candidate) =>
     editForm.assignedUsers.includes(candidate.id)
