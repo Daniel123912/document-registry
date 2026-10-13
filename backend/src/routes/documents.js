@@ -8,6 +8,15 @@ const documents = require("../services/documents");
 
 const router = express.Router();
 
+const DOCUMENT_TYPE_VALUES = [
+  "order",
+  "regulation",
+  "instruction",
+  "new_goods",
+  "other",
+  "legal_entity",
+];
+
 router.get(
   "/",
   requireAuth,
@@ -77,7 +86,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const schema = z.object({
       title: z.string().min(1),
-      type: z.enum(["order", "regulation", "instruction", "new_goods", "other"]),
+      type: z.enum(DOCUMENT_TYPE_VALUES),
       number: z.string().optional().default(""),
       documentDate: z.string().min(1),
       dueDate: z.string().min(1),
@@ -178,7 +187,7 @@ router.post(
 async function updateDocumentRequisites(req, res) {
   const schema = z.object({
     title: z.string().min(1),
-    type: z.enum(["order", "regulation", "instruction", "new_goods", "other"]),
+    type: z.enum(DOCUMENT_TYPE_VALUES),
     number: z.string().optional().default(""),
     documentDate: z.string().min(1),
     description: z.string().optional().default(""),

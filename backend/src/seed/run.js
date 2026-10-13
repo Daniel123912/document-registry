@@ -1,9 +1,9 @@
 const { initializeDatabase } = require("../db");
-const { seedDefaultUsers } = require("./users");
+const { seedAllDemoUsers } = require("./users");
 
 async function seed() {
   await initializeDatabase();
-  await seedDefaultUsers();
+  await seedAllDemoUsers();
 
   console.log("Seed completed.");
   console.log("Responsible: responsible@bakor.local / admin1234");

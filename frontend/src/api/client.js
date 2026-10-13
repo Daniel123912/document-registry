@@ -34,6 +34,47 @@ export async function login(payload) {
   });
 }
 
+async function moderatorRequest(path, options = {}) {
+  return request(`/moderator${path}`, options);
+}
+
+export async function moderatorLogin(payload) {
+  return moderatorRequest("/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchModeratorUsers(token) {
+  return moderatorRequest("/users", {
+    headers: authHeaders(token),
+  });
+}
+
+export async function createModeratorUser(token, payload) {
+  return moderatorRequest("/users", {
+    method: "POST",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateModeratorUser(token, userId, payload) {
+  return moderatorRequest(`/users/${userId}`, {
+    method: "PATCH",
+    headers: authHeaders(token, { "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteModeratorUser(token, userId) {
+  return moderatorRequest(`/users/${userId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
 export async function fetchUsers(token) {
   return request("/users", {
     headers: authHeaders(token),

@@ -49,10 +49,45 @@ function requireResponsible(req, res, next) {
   return next();
 }
 
+function signModeratorToken() {
+  return jwt.sign(
+    {
+      sub: "moderator",
+      role: "moderator",
+    },
+    jwtSecret,
+    { expiresIn: "12h" }
+  );
+}
+
+function requireModerator(req, res, next) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length)
+    : "";
+
+  if (!token) {
+    return res.status(401).json({ message: "Требуется авторизация модератора." });
+  }
+
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    if (payload.role !== "moderator") {
+      return res.status(403).json({ message: "Недостаточно прав." });
+    }
+    req.moderator = payload;
+    return next();
+  } catch (error) {
+    return res.status(401).json({ message: "Сессия модератора недействительна." });
+  }
+}
+
 module.exports = {
   signToken,
+  signModeratorToken,
   hashPassword,
   comparePassword,
   requireAuth,
   requireResponsible,
+  requireModerator,
 };

@@ -28,6 +28,10 @@ const smtpPort = Number(process.env.SMTP_PORT || 465);
 module.exports = {
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || "change-me",
+  passwordVaultKey:
+    process.env.PASSWORD_VAULT_KEY || process.env.JWT_SECRET || "",
+  moderatorLogin: process.env.MODERATOR_LOGIN || "",
+  moderatorPassword: process.env.MODERATOR_PASSWORD || "",
   databaseUrl: buildDatabaseUrl(),
   uploadsDir,
   uploadsTmpDir,

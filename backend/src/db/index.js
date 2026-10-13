@@ -66,6 +66,46 @@ async function initializeDatabase() {
   await migrateEmailTemplatesSchema(query);
   await migrateLettersSchema(query);
   await migrateStoredFilePaths(query);
+  await migrateUsersPasswordStorage(query);
+}
+
+async function migrateUsersPasswordStorage(query) {
+  const { encryptPassword } = require("../passwordVault");
+
+  await query(`
+    ALTER TABLE users
+    DROP COLUMN IF EXISTS password_plain
+  `);
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password_encrypted TEXT
+  `);
+
+  const responsibleEncrypted = encryptPassword("admin1234");
+  if (responsibleEncrypted) {
+    await query(
+      `
+        UPDATE users
+        SET password_encrypted = $1
+        WHERE email = 'responsible@bakor.local'
+          AND password_encrypted IS NULL
+      `,
+      [responsibleEncrypted]
+    );
+  }
+
+  const employeeEncrypted = encryptPassword("user1234");
+  if (employeeEncrypted) {
+    await query(
+      `
+        UPDATE users
+        SET password_encrypted = $1
+        WHERE email LIKE 'employee%@bakor.local'
+          AND password_encrypted IS NULL
+      `,
+      [employeeEncrypted]
+    );
+  }
 }
 
 async function migrateLettersLegacySchema(query) {

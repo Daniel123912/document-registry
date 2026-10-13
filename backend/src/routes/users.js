@@ -1,7 +1,8 @@
 const express = require("express");
 const { z } = require("zod");
 const { query } = require("../db");
-const { hashPassword, requireAuth, requireResponsible } = require("../auth");
+const { requireAuth, requireResponsible } = require("../auth");
+const { buildPasswordFields } = require("../userPassword");
 const { asyncHandler } = require("../middleware/asyncHandler");
 
 const router = express.Router();
@@ -40,14 +41,22 @@ router.post(
     });
     const parsed = schema.parse(req.body);
 
-    const passwordHash = await hashPassword(parsed.password);
+    const { passwordHash, passwordEncrypted } = await buildPasswordFields(
+      parsed.password
+    );
     const result = await query(
       `
-        INSERT INTO users (full_name, email, password_hash, role)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO users (full_name, email, password_hash, password_encrypted, role)
+        VALUES ($1, $2, $3, $4, $5)
         RETURNING id, full_name, email, role, is_active, created_at
       `,
-      [parsed.fullName, parsed.email.toLowerCase(), passwordHash, parsed.role]
+      [
+        parsed.fullName,
+        parsed.email.toLowerCase(),
+        passwordHash,
+        passwordEncrypted,
+        parsed.role,
+      ]
     );
 
     const user = result.rows[0];

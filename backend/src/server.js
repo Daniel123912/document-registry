@@ -13,6 +13,7 @@ const reportRoutes = require("./routes/reports");
 const emailTemplateRoutes = require("./routes/emailTemplates");
 const emailTemplateFolderRoutes = require("./routes/emailTemplateFolders");
 const letterRoutes = require("./routes/letters");
+const moderatorRoutes = require("./routes/moderator");
 const { seedDefaultTemplates } = require("./services/emailTemplates");
 
 const app = express();
@@ -37,6 +38,7 @@ app.use("/reports", reportRoutes);
 app.use("/email-templates", emailTemplateRoutes);
 app.use("/email-template-folders", emailTemplateFolderRoutes);
 app.use("/letters", letterRoutes);
+app.use("/moderator", moderatorRoutes);
 
 app.use(errorHandler);
 
