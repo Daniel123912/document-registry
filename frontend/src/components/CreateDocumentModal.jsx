@@ -1,4 +1,4 @@
-import { TYPE_OPTIONS } from "../constants";
+import { ALL_TYPE_OPTIONS, typeAllowsFolders } from "../constants";
 import { flattenFoldersForSelect } from "../utils/folders";
 
 export default function CreateDocumentModal({
@@ -36,7 +36,7 @@ export default function CreateDocumentModal({
                     }))
                   }
                 >
-                  {TYPE_OPTIONS.map((option) => (
+                  {ALL_TYPE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -60,26 +60,28 @@ export default function CreateDocumentModal({
               </label>
             </div>
 
-            <label className="form-field">
-              Папка
-              <select
-                className="field-select"
-                value={createForm.folderId || ""}
-                onChange={(event) =>
-                  setCreateForm((current) => ({
-                    ...current,
-                    folderId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">Выберите папку</option>
-                {folderOptions.map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {typeAllowsFolders(createForm.type) ? (
+              <label className="form-field">
+                Папка
+                <select
+                  className="field-select"
+                  value={createForm.folderId || ""}
+                  onChange={(event) =>
+                    setCreateForm((current) => ({
+                      ...current,
+                      folderId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Выберите папку</option>
+                  {folderOptions.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <label className="form-field">
               Название документа

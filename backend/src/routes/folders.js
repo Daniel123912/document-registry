@@ -6,7 +6,14 @@ const folders = require("../services/folders");
 
 const router = express.Router();
 
-const typeSchema = z.enum(["order", "regulation", "instruction", "new_goods", "other"]);
+const typeSchema = z.enum([
+  "order",
+  "regulation",
+  "instruction",
+  "new_goods",
+  "other",
+  "legal_entity",
+]);
 
 router.get(
   "/",

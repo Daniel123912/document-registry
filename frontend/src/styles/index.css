@@ -14,6 +14,8 @@
   --warn-ink: #a45100;
   --danger-bg: #fde2e2;
   --danger-ink: #8f2121;
+  --font-size: 12px;
+  --font-size-heading: 13px;
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
   background: var(--page);
@@ -35,6 +37,16 @@ body,
 
 body {
   margin: 0;
+  font-size: var(--font-size);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-heading);
 }
 
 h1,

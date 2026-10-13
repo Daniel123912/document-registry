@@ -137,7 +137,7 @@ async function listDocuments({ userId, role, onlyAssigned, trash = false }) {
         JOIN documents d ON d.id = da.document_id
         JOIN users u ON u.id = da.user_id
         WHERE da.document_id = ANY($1::bigint[])
-        ORDER BY da.document_id ASC, u.full_name ASC
+        ORDER BY da.document_id ASC, is_acknowledged ASC, u.full_name ASC
       `,
       [documentIds]
     ),
@@ -202,6 +202,7 @@ const DOCUMENT_NUMBER_PREFIXES = {
   instruction: "ИН",
   new_goods: "НТ",
   other: "ДР",
+  legal_entity: "ЮЛ",
 };
 
 function normalizeDocumentNumber(value) {

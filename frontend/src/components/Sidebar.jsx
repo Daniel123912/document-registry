@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TYPE_OPTIONS } from "../constants";
+import {
+  TYPE_OPTIONS,
+  ORDER_TYPE,
+  WORK_DOCUMENT_TYPE_OPTIONS,
+  LEGAL_ENTITY_TYPE,
+  LEGAL_ENTITY_OPTION,
+  typeAllowsFolders,
+} from "../constants";
 import { buildFolderChildrenMap, foldersForType } from "../utils/folders";
 
 function navTreeRowClass({ active = false, menuOpen = false, root = false }) {
@@ -65,9 +72,9 @@ function FolderBranch({
                 active: isActive,
                 menuOpen: contextFolderId === folder.id,
               })}
-              onContextMenu={
-                isResponsible ? (event) => onFolderContextMenu(event, folder) : undefined
-              }
+        onContextMenu={
+          isResponsible ? (event) => onFolderContextMenu(event, folder) : undefined
+        }
             >
               <TreeToggle
                 visible={hasChildren}
@@ -100,6 +107,75 @@ function FolderBranch({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function TypeNavBranch({
+  option,
+  folders,
+  section,
+  activeType,
+  activeFolderId,
+  expandedTypes,
+  expandedFolders,
+  isResponsible,
+  contextMenu,
+  onSelectType,
+  toggleTypeFolders,
+  onSelectFolder,
+  toggleFolder,
+  openContextMenu,
+}) {
+  const typeFolders = foldersForType(folders, option.value);
+  const typeExpanded = expandedTypes.has(option.value);
+  const typeActive =
+    section === "active" && activeType === option.value && activeFolderId == null;
+
+  return (
+    <div className="nav-tree-branch">
+      <div
+        className={navTreeRowClass({
+          active: typeActive,
+          menuOpen: contextMenu?.kind === "type" && contextMenu.type === option.value,
+        })}
+        onContextMenu={
+          isResponsible && typeAllowsFolders(option.value)
+            ? (event) =>
+                openContextMenu(event, {
+                  kind: "type",
+                  type: option.value,
+                })
+            : undefined
+        }
+      >
+        <TreeToggle
+          visible={typeFolders.length > 0}
+          open={typeExpanded}
+          onClick={() => toggleTypeFolders(option.value)}
+        />
+        <button type="button" className="nav-tree-name" onClick={() => onSelectType(option.value)}>
+          {option.label}
+        </button>
+      </div>
+
+      {typeExpanded ? (
+        <FolderBranch
+          folders={typeFolders}
+          parentId={null}
+          activeType={activeType}
+          activeFolderId={activeFolderId}
+          section={section}
+          expandedFolders={expandedFolders}
+          isResponsible={isResponsible}
+          onSelectFolder={onSelectFolder}
+          onToggleFolder={toggleFolder}
+          onFolderContextMenu={(event, folder) =>
+            openContextMenu(event, { kind: "folder", folder })
+          }
+          contextFolderId={contextMenu?.kind === "folder" ? contextMenu.folder.id : null}
+        />
+      ) : null}
     </div>
   );
 }
@@ -181,12 +257,10 @@ export default function Sidebar({
   section,
   activeType,
   activeFolderId,
-  activeOpen,
   folders,
   lettersOpen,
   lettersFolderId,
   emailTemplateFolders,
-  onToggleActive,
   onInbox,
   onSelectType,
   onSelectFolder,
@@ -369,7 +443,11 @@ export default function Sidebar({
     };
   }, [contextMenu]);
 
-  const lettersRootActive = section === "letters" && lettersFolderId == null;
+  const legalFolders = foldersForType(folders, LEGAL_ENTITY_TYPE);
+  const orderOption = TYPE_OPTIONS.find((option) => option.value === ORDER_TYPE);
+  const legalExpanded = expandedTypes.has(LEGAL_ENTITY_TYPE);
+  const legalActive =
+    section === "active" && activeType === LEGAL_ENTITY_TYPE && activeFolderId == null;
 
   return (
     <aside className="sidebar">
@@ -394,6 +472,25 @@ export default function Sidebar({
         </button>
 
         <div className="nav-tree">
+          {orderOption ? (
+            <TypeNavBranch
+              option={orderOption}
+              folders={folders}
+              section={section}
+              activeType={activeType}
+              activeFolderId={activeFolderId}
+              expandedTypes={expandedTypes}
+              expandedFolders={expandedFolders}
+              isResponsible={isResponsible}
+              contextMenu={contextMenu}
+              onSelectType={onSelectType}
+              toggleTypeFolders={toggleTypeFolders}
+              onSelectFolder={onSelectFolder}
+              toggleFolder={toggleFolder}
+              openContextMenu={openContextMenu}
+            />
+          ) : null}
+
           <div className={navTreeRowClass({ root: true })}>
             <TreeToggle
               visible
@@ -405,162 +502,112 @@ export default function Sidebar({
               className="nav-tree-name"
               onClick={() => setWorkOpen((current) => !current)}
             >
-              Рабочие разделы
+              Рабочие документы
             </button>
           </div>
 
           {workOpen ? (
             <div className="nav-tree-children">
-              <div className="nav-tree-branch">
-                <div className={navTreeRowClass({})}>
-                  <TreeToggle visible open={activeOpen} onClick={onToggleActive} />
-                  <button type="button" className="nav-tree-name" onClick={onToggleActive}>
-                    Действующие документы
-                  </button>
-                </div>
+              {WORK_DOCUMENT_TYPE_OPTIONS.map((option) => (
+                <TypeNavBranch
+                  key={option.value}
+                  option={option}
+                  folders={folders}
+                  section={section}
+                  activeType={activeType}
+                  activeFolderId={activeFolderId}
+                  expandedTypes={expandedTypes}
+                  expandedFolders={expandedFolders}
+                  isResponsible={isResponsible}
+                  contextMenu={contextMenu}
+                  onSelectType={onSelectType}
+                  toggleTypeFolders={toggleTypeFolders}
+                  onSelectFolder={onSelectFolder}
+                  toggleFolder={toggleFolder}
+                  openContextMenu={openContextMenu}
+                />
+              ))}
+            </div>
+          ) : null}
 
-                {activeOpen ? (
-                  <div className="nav-tree-children">
-                    {TYPE_OPTIONS.map((option) => {
-                      const typeFolders = foldersForType(folders, option.value);
-                      const typeExpanded = expandedTypes.has(option.value);
-                      const typeActive =
-                        section === "active" &&
-                        activeType === option.value &&
-                        activeFolderId == null;
-
-                      return (
-                        <div key={option.value} className="nav-tree-branch">
-                          <div
-                            className={navTreeRowClass({
-                              active: typeActive,
-                              menuOpen: contextMenu?.kind === "type" && contextMenu.type === option.value,
-                            })}
-                            onContextMenu={
-                              isResponsible
-                                ? (event) =>
-                                    openContextMenu(event, {
-                                      kind: "type",
-                                      type: option.value,
-                                    })
-                                : undefined
-                            }
-                          >
-                            <TreeToggle
-                              visible={typeFolders.length > 0}
-                              open={typeExpanded}
-                              onClick={() => toggleTypeFolders(option.value)}
-                            />
-                            <button
-                              type="button"
-                              className="nav-tree-name"
-                              onClick={() => onSelectType(option.value)}
-                            >
-                              {option.label}
-                            </button>
-                          </div>
-
-                          {typeExpanded ? (
-                            <FolderBranch
-                              folders={typeFolders}
-                              parentId={null}
-                              activeType={activeType}
-                              activeFolderId={activeFolderId}
-                              section={section}
-                              expandedFolders={expandedFolders}
-                              isResponsible={isResponsible}
-                              onSelectFolder={onSelectFolder}
-                              onToggleFolder={toggleFolder}
-                              onFolderContextMenu={(event, folder) =>
-                                openContextMenu(event, { kind: "folder", folder })
-                              }
-                              contextFolderId={
-                                contextMenu?.kind === "folder" ? contextMenu.folder.id : null
-                              }
-                            />
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-
+          <div className="nav-tree-branch">
+            <div
+              className={navTreeRowClass({
+                active: legalActive,
+                menuOpen: contextMenu?.kind === "type" && contextMenu.type === LEGAL_ENTITY_TYPE,
+              })}
+              onContextMenu={
+                isResponsible
+                  ? (event) =>
+                      openContextMenu(event, {
+                        kind: "type",
+                        type: LEGAL_ENTITY_TYPE,
+                      })
+                  : undefined
+              }
+            >
+              <TreeToggle
+                visible={legalFolders.length > 0}
+                open={legalExpanded}
+                onClick={() => toggleTypeFolders(LEGAL_ENTITY_TYPE)}
+              />
               <button
                 type="button"
-                className={navTreeRowClass({ active: section === "archive" })}
-                onClick={onArchive}
+                className="nav-tree-name"
+                onClick={() => onSelectType(LEGAL_ENTITY_TYPE)}
               >
-                <TreeToggle visible={false} />
-                <span className="nav-tree-name">Архив</span>
+                {LEGAL_ENTITY_OPTION.label}
               </button>
-
-              {isResponsible ? (
-                <button
-                  type="button"
-                  className={navTreeRowClass({ active: section === "trash" })}
-                  onClick={onTrash}
-                >
-                  <TreeToggle visible={false} />
-                  <span className="nav-tree-name">Корзина</span>
-                </button>
-              ) : null}
-
-              {isResponsible ? (
-                <button
-                  type="button"
-                  className={navTreeRowClass({ active: section === "report" })}
-                  onClick={onReport}
-                >
-                  <TreeToggle visible={false} />
-                  <span className="nav-tree-name">Отчеты</span>
-                </button>
-              ) : null}
-
-              {isResponsible ? (
-                <div className="nav-tree-branch">
-                  <div
-                    className={navTreeRowClass({
-                      active: lettersRootActive,
-                      menuOpen: contextMenu?.kind === "letters-root",
-                    })}
-                    onContextMenu={
-                      isResponsible
-                        ? (event) => openContextMenu(event, { kind: "letters-root" })
-                        : undefined
-                    }
-                  >
-                    <TreeToggle
-                      visible={emailTemplateFolders.length > 0}
-                      open={lettersOpen}
-                      onClick={onToggleLetters}
-                    />
-                    <button type="button" className="nav-tree-name" onClick={onLetters}>
-                      Письма
-                    </button>
-                  </div>
-
-                  {lettersOpen ? (
-                    <EmailFolderBranch
-                      folders={emailTemplateFolders}
-                      parentId={null}
-                      lettersFolderId={lettersFolderId}
-                      section={section}
-                      expandedFolders={expandedEmailFolders}
-                      isResponsible={isResponsible}
-                      onSelectLettersFolder={onSelectLettersFolder}
-                      onToggleLettersFolder={toggleLettersFolder}
-                      onEmailFolderContextMenu={(event, folder) =>
-                        openContextMenu(event, { kind: "email-folder", folder })
-                      }
-                      contextEmailFolderId={
-                        contextMenu?.kind === "email-folder" ? contextMenu.folder.id : null
-                      }
-                    />
-                  ) : null}
-                </div>
-              ) : null}
             </div>
+
+            {legalExpanded ? (
+              <FolderBranch
+                folders={legalFolders}
+                parentId={null}
+                activeType={activeType}
+                activeFolderId={activeFolderId}
+                section={section}
+                expandedFolders={expandedFolders}
+                isResponsible={isResponsible}
+                onSelectFolder={onSelectFolder}
+                onToggleFolder={toggleFolder}
+                onFolderContextMenu={(event, folder) =>
+                  openContextMenu(event, { kind: "folder", folder })
+                }
+                contextFolderId={contextMenu?.kind === "folder" ? contextMenu.folder.id : null}
+              />
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className={navTreeRowClass({ active: section === "archive" })}
+            onClick={onArchive}
+          >
+            <TreeToggle visible={false} />
+            <span className="nav-tree-name">Архив</span>
+          </button>
+
+          {isResponsible ? (
+            <button
+              type="button"
+              className={navTreeRowClass({ active: section === "trash" })}
+              onClick={onTrash}
+            >
+              <TreeToggle visible={false} />
+              <span className="nav-tree-name">Корзина</span>
+            </button>
+          ) : null}
+
+          {isResponsible ? (
+            <button
+              type="button"
+              className={navTreeRowClass({ active: section === "report" })}
+              onClick={onReport}
+            >
+              <TreeToggle visible={false} />
+              <span className="nav-tree-name">Отчеты</span>
+            </button>
           ) : null}
         </div>
       </nav>
@@ -626,7 +673,8 @@ export default function Sidebar({
                 Добавить папку
               </button>
             </>
-          ) : (
+          ) : (contextMenu.kind === "type" && typeAllowsFolders(contextMenu.type)) ||
+            (contextMenu.kind === "folder" && typeAllowsFolders(contextMenu.folder.type)) ? (
             <button
               type="button"
               role="menuitem"
@@ -641,7 +689,7 @@ export default function Sidebar({
             >
               Добавить папку
             </button>
-          )}
+          ) : null}
           {contextMenu.kind === "folder" ? (
             <>
               <button

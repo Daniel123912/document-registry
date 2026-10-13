@@ -506,6 +506,180 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+.report-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.report-summary-item {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  border: 1px solid #d5e3f0;
+}
+
+.report-summary-item.ok {
+  background: var(--ok-bg);
+  border-color: #b8e8cf;
+}
+
+.report-summary-item.warn {
+  background: var(--warn-bg);
+  border-color: #f0d4a8;
+}
+
+.report-summary-value {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #314354;
+}
+
+.report-summary-item.ok .report-summary-value {
+  color: var(--ok-ink);
+}
+
+.report-summary-item.warn .report-summary-value {
+  color: var(--warn-ink);
+}
+
+.report-summary-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: #5c6b7a;
+}
+
+.report-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.report-table tbody tr {
+  cursor: default;
+}
+
+.report-table tbody tr.report-section-type,
+.report-table tbody tr.report-section-folder {
+  background: #f4f8fc;
+}
+
+.report-table tbody tr.report-section-type:hover,
+.report-table tbody tr.report-section-folder:hover {
+  background: #f4f8fc;
+}
+
+.report-table tbody tr.report-data-row:hover {
+  background: #f6f9fc;
+}
+
+.report-table tbody tr.report-data-row.nested td:first-child {
+  padding-left: 28px;
+}
+
+.report-section-type td,
+.report-section-folder td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom-color: #e6edf4;
+}
+
+.report-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+  text-align: left;
+  color: #314354;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.report-group-toggle.nested {
+  font-weight: 600;
+  font-size: 13px;
+  color: #4a5d70;
+}
+
+.report-group-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.report-group-count {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--brand-strong);
+  border: 1px solid #c5d4e4;
+}
+
+.report-version-cell {
+  white-space: nowrap;
+  color: #5c6b7a;
+  font-size: 13px;
+}
+
+.report-ack-cell {
+  min-width: 180px;
+}
+
+.report-ack-progress {
+  max-width: 220px;
+  margin-bottom: 4px;
+}
+
+.report-ack-progress .ack-progress-bar.complete {
+  background: #3dae6a;
+}
+
+.report-ack-progress .ack-progress-bar.partial {
+  background: var(--brand);
+}
+
+.report-ack-progress .ack-progress-bar.none {
+  background: #c5d4e4;
+}
+
+.report-ack-progress .ack-progress-bar.empty {
+  width: 0 !important;
+}
+
+.report-ack-meta {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.report-ack-counts {
+  font-weight: 600;
+  color: #314354;
+}
+
+.report-ack-pending {
+  color: var(--warn-ink);
+  font-weight: 500;
+}
+
+.report-status-neutral {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .overlay {
   position: fixed;
   inset: 0;

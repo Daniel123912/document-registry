@@ -32,7 +32,7 @@ import {
 import { withReadableFilenames } from "./utils/filenames";
 import { addDays, toIsoDate } from "./utils/dates";
 import { folderPathLabels } from "./utils/folders";
-import { typeLabel } from "./constants";
+import { typeLabel, LEGAL_ENTITY_TYPE } from "./constants";
 import LoginPage from "./pages/LoginPage";
 import Sidebar from "./components/Sidebar";
 import DocumentList from "./components/DocumentList";
@@ -108,9 +108,8 @@ function App() {
     password: "admin1234",
   });
   const [section, setSection] = useState("active");
-  const [activeType, setActiveType] = useState("other");
+  const [activeType, setActiveType] = useState("order");
   const [activeFolderId, setActiveFolderId] = useState(null);
-  const [activeOpen, setActiveOpen] = useState(true);
   const [lettersOpen, setLettersOpen] = useState(true);
   const [lettersFolderId, setLettersFolderId] = useState(null);
   const [lettersView, setLettersView] = useState("list");
@@ -443,7 +442,6 @@ function App() {
       setSection("active");
       setActiveType(createForm.type);
       setActiveFolderId(createForm.folderId ? Number(createForm.folderId) : null);
-      setActiveOpen(true);
       setSelectedDocumentId(result.id || null);
       await loadData();
     } catch (requestError) {
@@ -611,7 +609,6 @@ function App() {
     setSection("active");
     setActiveType(type);
     setActiveFolderId(null);
-    setActiveOpen(true);
     setSelectedDocumentId(null);
   }
 
@@ -619,7 +616,6 @@ function App() {
     setSection("active");
     setActiveType(type);
     setActiveFolderId(folderId);
-    setActiveOpen(true);
     setSelectedDocumentId(null);
   }
 
@@ -788,7 +784,6 @@ function App() {
           setSection("active");
           setActiveType(prompt.type);
           setActiveFolderId(folder.id);
-          setActiveOpen(true);
         } else if (prompt.kind === "rename-folder") {
           await updateFolder(token, prompt.folder.id, { name: trimmed });
           setNotice("Папка переименована.");
@@ -880,12 +875,10 @@ function App() {
         section={section}
         activeType={activeType}
         activeFolderId={activeFolderId}
-        activeOpen={activeOpen}
         folders={folders}
         lettersOpen={lettersOpen}
         lettersFolderId={lettersFolderId}
         emailTemplateFolders={emailTemplateFolders}
-        onToggleActive={() => setActiveOpen((current) => !current)}
         onInbox={() => {
           setSection("inbox");
           setSelectedDocumentId(null);
@@ -925,7 +918,7 @@ function App() {
         {error ? <div className="alert error">{error}</div> : null}
 
         {section === "report" && isResponsible ? (
-          <ReportTable listTitle={listTitle} reportRows={reportRows} />
+          <ReportTable listTitle={listTitle} reportRows={reportRows} folders={folders} />
         ) : section === "letters" && isResponsible ? (
           lettersView === "templates" ? (
             <Suspense

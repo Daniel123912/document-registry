@@ -1,6 +1,13 @@
 const { query, withTransaction } = require("../db");
 
-const DOCUMENT_TYPES = new Set(["order", "regulation", "instruction", "new_goods", "other"]);
+const DOCUMENT_TYPES = new Set([
+  "order",
+  "regulation",
+  "instruction",
+  "new_goods",
+  "other",
+  "legal_entity",
+]);
 
 function httpError(statusCode, message) {
   const error = new Error(message);
@@ -117,6 +124,9 @@ async function createFolder({ name, type, parentId = null }) {
   }
   if (!DOCUMENT_TYPES.has(type)) {
     throw httpError(400, "Некорректный тип документов.");
+  }
+  if (type === "order") {
+    throw httpError(400, "Для приказов и решений папки не используются.");
   }
 
   return withTransaction(async (client) => {
