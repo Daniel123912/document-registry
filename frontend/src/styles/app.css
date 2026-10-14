@@ -785,6 +785,16 @@ textarea::placeholder {
   align-items: stretch;
 }
 
+.create-document-order-layout-compact {
+  grid-template-rows: auto auto auto;
+}
+
+.create-document-order-description-field-compact {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+}
+
 .create-document-order-top {
   grid-column: 1;
   grid-row: 1;
@@ -795,6 +805,10 @@ textarea::placeholder {
 .create-document-order-meta {
   grid-template-columns: 112px minmax(0, 1fr) 156px;
   align-items: start;
+}
+
+.create-document-order-meta-no-number {
+  grid-template-columns: minmax(0, 1fr) 156px;
 }
 
 .create-document-order-number-hint {
@@ -909,8 +923,9 @@ textarea::placeholder {
 }
 
 .create-document-order-notify .users-box {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: none;
   overflow-y: auto;
   margin-top: 0;
   background: #fff;

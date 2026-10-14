@@ -80,21 +80,46 @@ function NotifyRecipientsField({
   );
 }
 
-function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPreviewNumber }) {
+function DocumentCreateFields({
+  createForm,
+  setCreateForm,
+  employeeUsers,
+  orderPreviewNumber,
+  folderOptions,
+}) {
+  const isOrderType = createForm.type === ORDER_TYPE;
+
   return (
-    <div className="create-document-order-layout">
+    <div
+      className={[
+        "create-document-order-layout",
+        isOrderType ? "" : "create-document-order-layout-compact",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="create-document-order-top">
-        <div className="form-row create-document-order-meta">
-          <label className="form-field">
-            Номер
-            <input
-              className="field-input"
-              value={orderPreviewNumber || "…"}
-              readOnly
-              aria-readonly="true"
-              title="Номер присваивается при создании и не переиспользуется"
-            />
-          </label>
+        <div
+          className={[
+            "form-row",
+            "create-document-order-meta",
+            isOrderType ? "" : "create-document-order-meta-no-number",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {isOrderType ? (
+            <label className="form-field">
+              Номер
+              <input
+                className="field-input"
+                value={orderPreviewNumber || "…"}
+                readOnly
+                aria-readonly="true"
+                title="Номер присваивается при создании и не переиспользуется"
+              />
+            </label>
+          ) : null}
           <label className="form-field">
             Тип
             <select
@@ -132,6 +157,29 @@ function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPrev
           </label>
         </div>
 
+        {!isOrderType && typeAllowsFolders(createForm.type) ? (
+          <label className="form-field">
+            Папка
+            <select
+              className="field-select"
+              value={createForm.folderId || ""}
+              onChange={(event) =>
+                setCreateForm((current) => ({
+                  ...current,
+                  folderId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Выберите папку</option>
+              {folderOptions.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         <label className="form-field">
           Название документа
           <input
@@ -145,11 +193,22 @@ function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPrev
         </label>
       </div>
 
-      <label className="form-field create-document-order-description-field">
-        <span className="create-document-order-field-label">Описание</span>
+      <label
+        className={[
+          "form-field",
+          isOrderType
+            ? "create-document-order-description-field"
+            : "create-document-order-description-field-compact",
+        ].join(" ")}
+      >
+        {isOrderType ? (
+          <span className="create-document-order-field-label">Описание</span>
+        ) : (
+          "Описание"
+        )}
         <textarea
-          className="create-document-order-description"
-          rows={3}
+          className={isOrderType ? "create-document-order-description" : ""}
+          rows={isOrderType ? 3 : 4}
           placeholder="Краткое описание документа"
           value={createForm.description}
           onChange={(event) =>
@@ -164,7 +223,7 @@ function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPrev
       <label className="form-field create-document-order-file">
         <span className="create-document-order-field-label">
           Файл документа
-          <span className="field-optional-badge">необязательно</span>
+          {isOrderType ? <span className="field-optional-badge">необязательно</span> : null}
         </span>
         <input
           className="file-input"
@@ -176,6 +235,7 @@ function OrderCreateFields({ createForm, setCreateForm, employeeUsers, orderPrev
               docFile: event.target.files?.[0] || null,
             }))
           }
+          required={!isOrderType}
         />
       </label>
 
@@ -201,141 +261,24 @@ export default function CreateDocumentModal({
   onSubmit,
 }) {
   const folderOptions = flattenFoldersForSelect(folders, createForm.type);
-  const isOrderType = createForm.type === ORDER_TYPE;
 
   return (
-    <div
-      className={["overlay", isOrderType ? "overlay-center" : ""].filter(Boolean).join(" ")}
-      onClick={onClose}
-    >
+    <div className="overlay overlay-center" onClick={onClose}>
       <form
-        className={["modal", isOrderType ? "create-document-order" : ""].filter(Boolean).join(" ")}
+        className="modal create-document-order"
         onClick={(event) => event.stopPropagation()}
         onSubmit={onSubmit}
       >
         <div className="modal-body">
           <h2 className="modal-title">Создать документ</h2>
 
-          {isOrderType ? (
-            <OrderCreateFields
-              createForm={createForm}
-              setCreateForm={setCreateForm}
-              employeeUsers={employeeUsers}
-              orderPreviewNumber={orderPreviewNumber}
-            />
-          ) : (
-            <div className="form-grid">
-              <div className="form-row">
-                <label className="form-field">
-                  Тип
-                  <select
-                    className="field-select"
-                    value={createForm.type}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        type: event.target.value,
-                        folderId: "",
-                      }))
-                    }
-                  >
-                    {ALL_TYPE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="form-field">
-                  Дата документа
-                  <input
-                    className="field-input"
-                    type="date"
-                    value={createForm.documentDate}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        documentDate: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </label>
-              </div>
-
-              {typeAllowsFolders(createForm.type) ? (
-                <label className="form-field">
-                  Папка
-                  <select
-                    className="field-select"
-                    value={createForm.folderId || ""}
-                    onChange={(event) =>
-                      setCreateForm((current) => ({
-                        ...current,
-                        folderId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Выберите папку</option>
-                    {folderOptions.map((folder) => (
-                      <option key={folder.id} value={folder.id}>
-                        {folder.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
-              <label className="form-field">
-                Название документа
-                <input
-                  className="field-input"
-                  value={createForm.title}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                  required
-                />
-              </label>
-
-              <label className="form-field">
-                Описание
-                <textarea
-                  rows="4"
-                  placeholder="Краткое описание документа"
-                  value={createForm.description}
-                  onChange={(event) =>
-                    setCreateForm((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-
-              <NotifyRecipientsField
-                createForm={createForm}
-                setCreateForm={setCreateForm}
-                employeeUsers={employeeUsers}
-              />
-
-              <label className="form-field">
-                Файл документа
-                <input
-                  className="file-input"
-                  type="file"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
-                  onChange={(event) =>
-                    setCreateForm((current) => ({
-                      ...current,
-                      docFile: event.target.files?.[0] || null,
-                    }))
-                  }
-                  required
-                />
-              </label>
-            </div>
-          )}
+          <DocumentCreateFields
+            createForm={createForm}
+            setCreateForm={setCreateForm}
+            employeeUsers={employeeUsers}
+            orderPreviewNumber={orderPreviewNumber}
+            folderOptions={folderOptions}
+          />
         </div>
         <div className="modal-foot">
           <button className="btn cancel" type="button" onClick={onClose}>
