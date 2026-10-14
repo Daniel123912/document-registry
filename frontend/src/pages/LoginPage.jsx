@@ -36,7 +36,7 @@ export default function LoginPage({ authForm, setAuthForm, onSubmit, loading, er
           </button>
         </form>
         <div className="helper">
-          <a href="/moderator">Вход модератора</a>
+          <a href="/moderator">Вход администратора</a>
         </div>
         {error ? <div className="alert error">{error}</div> : null}
       </section>

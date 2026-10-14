@@ -614,7 +614,7 @@ export default function Sidebar({
 
       <div className="sidebar-foot">
         <div>{user.fullName}</div>
-        <div>{isResponsible ? "Ответственный" : "Сотрудник"}</div>
+        <div>{isResponsible ? "Модератор" : "Сотрудник"}</div>
         <button className="logout-btn" onClick={onLogout}>
           Выйти
         </button>

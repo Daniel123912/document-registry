@@ -90,7 +90,7 @@ server {
 
     client_max_body_size 100M;
 
-    # Страница входа модератора — SPA, не API
+    # Страница входа администратора — SPA, не API
     location = /moderator {
         try_files /index.html =404;
     }

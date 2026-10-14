@@ -17,7 +17,7 @@ const emptyForm = {
 };
 
 function roleLabel(role) {
-  return role === "responsible" ? "Ответственный" : "Сотрудник";
+  return role === "responsible" ? "Модератор" : "Сотрудник";
 }
 
 function generatePassword(length = 10) {
@@ -307,7 +307,7 @@ export default function ModeratorPage() {
     return (
       <main className="login-screen">
         <section className="login-card moderator-login-card">
-          <p className="moderator-login-badge">Панель модератора</p>
+          <p className="moderator-login-badge">Панель администратора</p>
           <h1>Вход</h1>
           <p>Управление учётными записями сотрудников реестра.</p>
           <form className="login-form" onSubmit={handleLogin}>
@@ -399,7 +399,7 @@ export default function ModeratorPage() {
         </div>
         <div className="report-summary-item">
           <span className="report-summary-value">{stats.responsible}</span>
-          <span className="report-summary-label">ответственных</span>
+          <span className="report-summary-label">модераторов</span>
         </div>
       </div>
 
@@ -420,7 +420,7 @@ export default function ModeratorPage() {
           >
             <option value="all">Все роли</option>
             <option value="employee">Сотрудники</option>
-            <option value="responsible">Ответственные</option>
+            <option value="responsible">Модераторы</option>
           </select>
           <select
             className="sort-select"
@@ -636,7 +636,7 @@ export default function ModeratorPage() {
                   }
                 >
                   <option value="employee">Сотрудник</option>
-                  <option value="responsible">Ответственный</option>
+                  <option value="responsible">Модератор</option>
                 </select>
               </label>
               <label className="user-check">

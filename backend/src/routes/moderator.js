@@ -28,7 +28,7 @@ router.post(
     if (!moderatorLogin || !moderatorPassword) {
       return res.status(503).json({
         message:
-          "Вход модератора не настроен. Задайте MODERATOR_LOGIN и MODERATOR_PASSWORD в backend/.env.",
+          "Вход администратора не настроен. Задайте MODERATOR_LOGIN и MODERATOR_PASSWORD в backend/.env.",
       });
     }
 

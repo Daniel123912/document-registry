@@ -67,7 +67,7 @@ function requireModerator(req, res, next) {
     : "";
 
   if (!token) {
-    return res.status(401).json({ message: "Требуется авторизация модератора." });
+    return res.status(401).json({ message: "Требуется авторизация администратора." });
   }
 
   try {
@@ -78,7 +78,7 @@ function requireModerator(req, res, next) {
     req.moderator = payload;
     return next();
   } catch (error) {
-    return res.status(401).json({ message: "Сессия модератора недействительна." });
+    return res.status(401).json({ message: "Сессия администратора недействительна." });
   }
 }
 

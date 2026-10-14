@@ -121,7 +121,7 @@ npm install
 npm run dev
 ```
 
-Сотрудников в репозитории не создаётся: после старта API добавьте учётки в [панели модератора](http://127.0.0.1:5173/moderator) (логин/пароль — `MODERATOR_LOGIN` / `MODERATOR_PASSWORD` в `backend/.env`).
+Сотрудников в репозитории не создаётся: после старта API добавьте учётки в [панели администратора](http://127.0.0.1:5173/moderator) (логин/пароль — `MODERATOR_LOGIN` / `MODERATOR_PASSWORD` в `backend/.env`).
 
 ## Порты
 

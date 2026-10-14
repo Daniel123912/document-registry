@@ -6,7 +6,7 @@ async function seed() {
   await seedAllDemoUsers();
 
   console.log("Database schema ready.");
-  console.log("Сотрудников в seed нет — создайте их в панели модератора (/moderator).");
+  console.log("Сотрудников в seed нет — создайте их в панели администратора (/moderator).");
   process.exit(0);
 }
 
